@@ -190,7 +190,7 @@ func (c *Catalog) tableNameToFile(tableName string) string {
 func (c *Catalog) GetTableInfo(named string) (*Table, error) {
 	t, ok := c.tableMap[named]
 	if !ok {
-		return nil, GoDBError{NoSuchTableError, fmt.Sprintf("no table '%s' found", named)}
+		return nil, GoDBError{NoSuchTableError, fmt.Sprintf("no table '%s' found %v", named, c.tableMap)}
 	}
 	return t, nil
 }
@@ -209,7 +209,7 @@ func (c *Catalog) GetTableInfoId(id int) (*Table, error) {
 			return t, nil
 		}
 	}
-	return nil, GoDBError{NoSuchTableError, fmt.Sprintf("no table '%d' found", id)}
+	return nil, GoDBError{NoSuchTableError, fmt.Sprintf("no table '%d' found %v", id, c.tableMap)}
 }
 
 func (c *Catalog) GetTableInfoDBFile(f DBFile) (*Table, error) {
@@ -271,4 +271,15 @@ func (c *Catalog) String() string {
 
 func (c *Catalog) CatalogString() string {
 	return c.String()
+}
+
+func (c *Catalog) TableNames() []string {
+	names := make([]string, len(c.tableMap))
+	i := 0
+	for k := range c.tableMap {
+		names[i] = k
+		i += 1
+	}
+	// fmt.Printf("names are %v map is %v\n", names, c.tableMap)
+	return names
 }

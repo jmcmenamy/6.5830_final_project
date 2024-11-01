@@ -48,12 +48,14 @@ const (
 
 type BufferPool struct {
 	// TODO: some code goes here
-	capacity       int
-	numPages       int
-	cacheHead      *CacheItem
-	cacheTail      *CacheItem
-	fileMap        map[any]*CacheItem
-	evictionPolicy EvictionPolicy
+	capacity         int
+	numPages         int
+	cacheHead        *CacheItem
+	cacheTail        *CacheItem
+	fileMap          map[any]*CacheItem
+	evictionPolicy   EvictionPolicy
+	getNum           int
+	CanFlushWhenFull bool
 }
 
 // Create a new BufferPool with the specified number of pages
@@ -148,6 +150,8 @@ func (bp *BufferPool) BeginTransaction(tid TransactionID) error {
 // implement locking or deadlock detection. You will likely want to store a list
 // of pages in the BufferPool in a map keyed by the [DBFile.pageKey].
 func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (Page, error) {
+	bp.getNum += 1
+	DebugBufferPool("get num is %v\n", bp.getNum)
 	// TODO Some code goes here
 
 	// Big beefy method, but is readable imo and would be more confusing to break it up, at least for me
@@ -216,6 +220,7 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 
 		return nil, err
 	}
+	DebugBufferPool("cache miss at get %v, need to evict is %v\n", bp.getNum, bp.numPages == bp.capacity)
 	DebugBufferPool("read page for pageno %v", pageNo)
 
 	return bp.AddPage(page, file, pageNo, tid, perm)
@@ -224,6 +229,8 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 // Add page to we don't have to flush immediately when new page created
 func (bp *BufferPool) AddPage(page Page, file DBFile, pageNo int, tid TransactionID, perm RWPerm) (Page, error) {
 	// try to catch errors proactively
+	bp.getNum += 1
+	DebugBufferPool("Adding page, getnum is %v, need to evict is %v\n", bp.getNum, bp.numPages == bp.capacity)
 	DebugBufferPool("Adding page %v numPages is %v capacity is %v file is %v\n", pageNo, bp.numPages, bp.capacity, file.pageKey(pageNo))
 	DebugBufferPool("Starting call to getpage head is %p tail is %p num pages is %v capcity is %v", bp.cacheHead, bp.cacheTail, bp.numPages, bp.capacity)
 	err := bp.checkRep()
@@ -265,7 +272,22 @@ func (bp *BufferPool) AddPage(page Page, file DBFile, pageNo int, tid Transactio
 
 			// all pages were dirty, flush all then evict head
 			if pageToEvict == nil {
-				return nil, GoDBError{BufferPoolFullError, fmt.Sprintf("All %v pages were dirty", bp.numPages)}
+				if !bp.CanFlushWhenFull {
+					return nil, GoDBError{BufferPoolFullError, fmt.Sprintf("All %v pages were dirty", bp.numPages)}
+				}
+				DebugBufferPool("Flushing!!!!!")
+				bp.FlushAllPages()
+				pageToEvict = bp.cacheHead
+				for pageToEvict != nil && pageToEvict.page.isDirty() {
+					DebugBufferPool("In loop?")
+					pageToEvict = pageToEvict.previousItem
+				}
+				DebugBufferPool("Uhh ok page to evict is now %v %v\n", pageToEvict, pageToEvict == nil)
+			}
+
+			if pageToEvict == nil {
+				DebugBufferPool("Bruh %v %v\n", bp.cacheHead, bp.cacheHead.page.isDirty())
+				return nil, GoDBError{BufferPoolFullError, fmt.Sprintf("Couldn't find page to evict %v", bp.numPages)}
 			}
 
 			// remove from cache and write to disk

@@ -24,6 +24,7 @@ Available shell commands:
 	\a : Toggle aligned vs csv output
     \o : Toggle query optimization
 	\l table path/to/file [sep] [hasHeader]: Append csv file to end of table.  Default to sep = ',', hasHeader = 'true'
+	\i path/to/file [extension] [sep] [hasHeader] : Change the current database to a specified catalog file, and load from csv-like files in same directory as catalog file, with given separator Default to extension = 'tbl', sep = '|', hasHeader = 'true'
 	\z : Compute statistics for the database`
 
 func printCatalog(c *godb.Catalog) {
@@ -48,7 +49,7 @@ func main() {
 
 	}()
 
-	bp, err := godb.NewBufferPool(10000)
+	bp, err := godb.NewBufferPool(10200)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -173,6 +174,64 @@ func main() {
 				}
 				bp.FlushAllPages() //gross, if in a transaction, but oh well!
 				fmt.Printf("\033[32;1mLOAD\033[0m\n\n")
+			case 'i':
+				bp.CanFlushWhenFull = true
+				// load the catalog file
+				if len(text) <= 3 {
+					fmt.Printf("Expected catalog file name after \\c")
+					continue
+				}
+				splits := strings.Split(text, " ")
+				path := splits[1]
+				extension := "tbl"
+				sep := "|"
+				hasHeader := true
+				if len(splits) > 2 {
+					extension = splits[2]
+				}
+				if len(splits) > 3 {
+					sep = splits[3]
+				}
+				if len(splits) > 4 {
+					hasHeader = splits[4] != "false"
+				}
+				pathAr := strings.Split(path, "/")
+				catName = pathAr[len(pathAr)-1]
+				catPath = strings.Join(pathAr[0:len(pathAr)-1], "/")
+				fmt.Printf("uhhh %v %v\n", catName, catPath)
+				c, err = godb.NewCatalogFromFile(catName, bp, catPath)
+				if err != nil {
+					fmt.Printf("failed load catalog, %s\n", err.Error())
+					continue
+				}
+				fmt.Printf("Loaded %s/%s %v\n", catPath, catName, c.TableNames())
+				printCatalog(c)
+
+				// load the csv files to each table
+
+				for _, tableName := range c.TableNames() {
+					fmt.Printf("uhh %v\n", tableName)
+					//todo -- following code assumes data is in heap files
+					hf, err := c.GetTable(tableName)
+					if err != nil {
+						fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
+						continue
+					}
+					heapFile := hf.(*godb.HeapFile)
+					f, err := os.Open(fmt.Sprintf("%v/%v.%v", catPath, tableName, extension))
+					if err != nil {
+						fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
+						continue
+					}
+					err = heapFile.LoadFromCSV(f, hasHeader, sep, false)
+					if err != nil {
+						fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
+						continue
+					}
+				}
+				bp.FlushAllPages() //gross, if in a transaction, but oh well!
+				fmt.Printf("\033[32;1mLOAD\033[0m\n\n")
+				bp.CanFlushWhenFull = false
 			}
 
 			query = ""

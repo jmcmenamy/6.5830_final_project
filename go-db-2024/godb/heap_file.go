@@ -35,6 +35,7 @@ type HeapFile struct {
 	numPages           int
 	file               *os.File
 	pagesWithFreeSpace map[int]bool
+	numInserted        int
 }
 
 // Create a HeapFile.
@@ -91,7 +92,11 @@ func (f *HeapFile) NumPages() int {
 func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool) error {
 	scanner := bufio.NewScanner(file)
 	cnt := 0
+	i := 0
 	for scanner.Scan() {
+		if i%100 == 0 {
+			fmt.Printf("Reading row %v of %v\n", i, file.Name())
+		}
 		line := scanner.Text()
 		fields := strings.Split(line, sep)
 		if skipLastField {
@@ -129,14 +134,16 @@ func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 		}
 		newT := Tuple{*f.Descriptor(), newFields, nil}
 		tid := NewTID()
-		bp := f.bufPool
-		f.insertTuple(&newT, tid)
-
-		// Force dirty pages to disk. CommitTransaction may not be implemented
-		// yet if this is called in lab 1 or 2.
-		bp.FlushAllPages()
-
+		err := f.insertTuple(&newT, tid)
+		if err != nil {
+			return err
+		}
+		i += 1
 	}
+	bp := f.bufPool
+	// Force dirty pages to disk. CommitTransaction may not be implemented
+	// yet if this is called in lab 1 or 2.
+	bp.FlushAllPages()
 	return nil
 }
 
@@ -189,6 +196,7 @@ func (f *HeapFile) readPage(pageNo int) (Page, error) {
 func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 	// TODO: some code goes here
 	DebugHeapFile("here5\n")
+	f.numInserted += 1
 
 	// look through each page sequentially for an empty slot
 	// TODO potential optimization to keep track of the lowest page No that has a free space
@@ -222,7 +230,7 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 			DebugHeapFile("returning lastWritten page file is %v\n", f.file.Name())
 			return err
 		}
-
+		DebugHeapFile("insert num %v, deleting page no %v\n", f.numInserted, pageNo)
 		// page no longer has free space
 		delete(f.pagesWithFreeSpace, pageNo)
 	}
@@ -243,6 +251,7 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 	}
 	DebugHeapFile("flushing heap page with no %v\n", heapPage.PageNo)
 	// TODO don't flush it here
+	DebugHeapFile("inset num %v, adding page cause all others full. %v\n", f.numInserted, len(f.pagesWithFreeSpace))
 	_, err = f.bufPool.AddPage(heapPage, f, f.numPages, tid, ReadPerm)
 	if err != nil {
 		DebugHeapFile("uhh err is %v\n", err)
