@@ -1,0 +1,26 @@
+Describe any design decisions you made. These may be minimal for Lab 1.
+    - I generally followed the structure outlined in the given lab1.md file. I decided to implement a MRU cache for the buffer pool.
+    - I also added some light functionality to switch between eviction policies easily if I want to test in the future for performance.
+        - currently the LRU option was not fully implemented because performance considerations weren't needed to pass lab 1 tests
+    - I also made a simple wrapper around fmt.Printf in order to easily turn on and off my print statements, because I don't want to keep
+    deleting/commenting them out then undoing that the next time I need to debug
+    - I initially was going to store the length of the string before every string value when converting a tuple to a buffer, but this would have
+    reduced the amount of data we could store per tuple, which I assume would cause me to fail tests. I ending up just using trimRight in order to
+    remove trailing 0's from the byte array
+    - I added information to the structs of BufferPool, HeapPage, and HeapFile that I thought was necessary/helped for optimizations
+        - I open the file and store in in the heapFile struct instead of opening it every time
+        - I calculate the tuple size and number of slots and store that in the HeapFile, so it can propagate down to the Tuple structs and not need to
+        be recalculated every time
+    - I added a 'checkRep' method for my BufferPool in order to make sure my MRU cache was working properly and catch bugs early. This method checked various
+    invariants I wanted to keep track of and raised an error if none of them held. This proved to be immensely helpful. I did a similar pattern for the HeapPage,
+    but not HeapFile because any invariants I would want to check would be too involved to verify, and I could rely on the invariants of HeapPage and BufferPool to hold.
+Discuss and justify any changes you made to the API.
+    - I didn't make any changes to the API. I briefly tried to change recordId to be a struct of my design, but that would require some changes to the tests,
+    which I didn't think we would be allowed to do. So I just made a struct called recordIdImpl and type cast to it.
+        - I followed a similar pattern for casting Page to heapPage when necessary, which felt cumbersome but worked
+Describe any missing or incomplete elements of your code.
+    - All the transaction id and concurrency consideration were ignored, as per the lab instructions. That will presumably be changed in a following lab
+Describe how long you spent on the lab, and whether there was anything you found particularly difficult or confusing.
+    - I spent ~16-20 hours on the lab. Hard to estimate since I had many working sessions over 2 weeks on this.
+    - The most confusing part was probably figuring out how the actual memory would be stored on disk, which has implications for
+    all the io calls as well as the encoding/decoding of buffers.

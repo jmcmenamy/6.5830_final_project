@@ -1,0 +1,23 @@
+• Describe any design decisions you made.
+    - I changed my debugging strategy. Instead a global wrapper around fmt.Printf, I made similar wrapper methods and boolean
+    flags for each of the files I have code in. That way, I have more granular control over what logs I see. Plus, I added
+    a global boolean flag, so I can turn all logs on and off quickly.
+• Discuss and justify any changes you made to the API.
+    - I didn't use the intAggGetter or stringAggGetter method stubs provided to use. Instead, I just did 
+    type checking in the agg state methods for dealing with strings vs ints. This seems more straightforward 
+    to me to get around the awkward typing
+• Describe any missing or incomplete elements of your code.
+    - Nothing missing or incomplete, I followed and completed all the lab instructions.
+• Describe how long you spent on the lab, and whether there was anything you found particularly difficult or confusing
+    - Difficult to estimate because I had multiple work sessions, but I would say 14-18 hours on this lab.
+
+• Describe any design decisions you made, including your choice of join and aggregate operator implementation. If you used something other than a nested-loops join, describe the tradeoffs of the algorithm you chose. If you implemented support for distinct in project_op.go, describe how you implemented it.
+    - For the join operator, I used something similar to a block hash join. I used block size of maxBuffer size records from the outer table,
+    but instead of hashing the join columns, I just put each distinct join db value in a map, so I didn't have to hash.
+    Duplicate are still possible, so the map is chained with a list. This gave very quick performance.
+    - For the aggregate operator, it was pretty straightforward since we were given the Iterator method
+    and just had to fill in the helper methods. I use the tuple key in getFinalizedTuplesIterator to get the agg state list.
+    I thought about implementing avg agg state using count and sum agg state, but the typing of the copy method would have
+    made that cumbersome, so I just duplicated the code. Same reason for the max and min agg state implementations
+    - I implemented distinct in project_op.go simply by using the tuple key to store a map of tuplekey to boolean,
+    which allowed me to see if I had seen a tuple before, and if so skip it
