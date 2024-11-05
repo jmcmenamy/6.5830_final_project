@@ -75,6 +75,7 @@ func (l *LimitOp) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 			return nil, nil
 		}
 
+		// fmt.Printf("returning limit tuple %v\n", childTup)
 		return childTup, nil
 	}, nil
 }

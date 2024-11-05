@@ -119,6 +119,8 @@ func (c *Catalog) parseCatalogFile() error {
 				fallthrough
 			case "integer":
 				fieldType.Ftype = IntType
+			case "float":
+				fieldType.Ftype = FloatType
 			case "string":
 				fallthrough
 			case "varchar":

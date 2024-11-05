@@ -56,6 +56,8 @@ func NewHeapFile(fromFile string, td *TupleDesc, bp *BufferPool) (*HeapFile, err
 			tupleSize += StringLength
 		case IntType:
 			tupleSize += Int64Length
+		case FloatType:
+			tupleSize += Float64Lengh
 		}
 	}
 
@@ -90,6 +92,8 @@ func (f *HeapFile) NumPages() int {
 // We provide the implementation of this method, but it won't work until
 // [HeapFile.insertTuple] and some other utility functions are implemented
 func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool) error {
+	f.bufPool.CanFlushWhenFull = true
+	defer func() { f.bufPool.CanFlushWhenFull = false }()
 	scanner := bufio.NewScanner(file)
 	cnt := 0
 	i := 0
@@ -125,6 +129,14 @@ func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 				}
 				intValue := int(floatVal)
 				newFields = append(newFields, IntField{int64(intValue)})
+			case FloatType:
+				field = strings.TrimSpace(field)
+				floatVal, err := strconv.ParseFloat(field, 64)
+				if err != nil {
+					return GoDBError{TypeMismatchError, fmt.Sprintf("LoadFromCSV: couldn't convert value %s to int, tuple %d", field, cnt)}
+				}
+				floatValue := float64(floatVal)
+				newFields = append(newFields, FloatField{floatValue})
 			case StringType:
 				if len(field) > StringLength {
 					field = field[0:StringLength]

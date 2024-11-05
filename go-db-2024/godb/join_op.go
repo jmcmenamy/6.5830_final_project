@@ -65,29 +65,37 @@ func (joinOp *EqualityJoin) Iterator(tid TransactionID) (func() (*Tuple, error),
 	var rightIter func() (*Tuple, error)
 	rightIter = nil
 
+	var leftBufferFloat map[float64][]*Tuple
 	var leftBufferInt map[int64][]*Tuple
 	var leftBufferString map[string][]*Tuple
 
 	// get the type of field we're joining on
-	intValue := true
-	stringValue := true
+	intValue := false
+	stringValue := false
+	floatValue := false
 	switch joinOp.leftField.GetExprType().Ftype {
 	case StringType:
-		intValue = false
+		stringValue = true
 	case IntType:
-		stringValue = false
+		intValue = true
+	case FloatType:
+		floatValue = true
 	}
 
 	switch joinOp.rightField.GetExprType().Ftype {
 	case StringType:
-		intValue = false
+		stringValue = true
 	case IntType:
-		stringValue = false
+		intValue = true
+	case FloatType:
+		floatValue = true
 	}
 
 	// make sure we don't have type mismatch
-	if !((intValue && !stringValue) || (stringValue && !intValue)) {
-		return nil, GoDBError{TypeMismatchError, fmt.Sprintf("intValue is %v and stringValue is %v", intValue, stringValue)}
+	if (intValue && stringValue) || (stringValue && intValue) ||
+		(intValue && floatValue) || (floatValue && intValue) ||
+		(floatValue && stringValue) || (stringValue && floatValue) {
+		return nil, GoDBError{TypeMismatchError, fmt.Sprintf("intValue is %v and stringValue is %v floatValue is %v left %v right %v", intValue, stringValue, floatValue, joinOp.leftField.GetExprType(), joinOp.rightField.GetExprType())}
 	}
 
 	// grab iterator through left outer table
@@ -168,9 +176,49 @@ func (joinOp *EqualityJoin) Iterator(tid TransactionID) (func() (*Tuple, error),
 							}
 
 							leftBufferInt[leftIntVal.Value] = append(leftBufferInt[leftIntVal.Value], tup)
-
+						case FloatField:
+							return nil, GoDBError{TypeMismatchError, "Should never get here 1"}
 						case StringField:
-							return nil, GoDBError{TypeMismatchError, "Should never get here"}
+							return nil, GoDBError{TypeMismatchError, "Should never get here 2"}
+						}
+					}
+				} else if floatValue {
+					leftBufferFloat = make(map[float64][]*Tuple)
+					// read through the left iterator until our buffer is full
+					for len(leftBufferFloat) < joinOp.maxBufferSize && leftIter != nil {
+						tup, err := leftIter()
+						if err != nil {
+							DebugJoin("Got err getting tuple: %v", err)
+							return nil, err
+						}
+
+						// EOF of left outer table
+						if tup == nil {
+							leftIter = nil
+							continue
+						}
+
+						DebugJoin("processing tuple left: %v", *tup)
+
+						leftValue, err := joinOp.leftField.EvalExpr(tup)
+						if err != nil {
+							DebugJoin("got err getting left tup: %v", err)
+							return nil, err
+						}
+
+						// add value to our left buffer map
+						switch leftFloatValue := leftValue.(type) {
+						case FloatField:
+							_, ok := leftBufferFloat[leftFloatValue.Value]
+							if !ok {
+								leftBufferFloat[leftFloatValue.Value] = make([]*Tuple, 0)
+							}
+
+							leftBufferFloat[leftFloatValue.Value] = append(leftBufferFloat[leftFloatValue.Value], tup)
+						case IntField:
+							return nil, GoDBError{TypeMismatchError, "Should never get here 3"}
+						case StringField:
+							return nil, GoDBError{TypeMismatchError, fmt.Sprintf("should never get here 4, %v %v %v %v", leftValue, floatValue, intValue, stringValue)}
 						}
 					}
 				} else {
@@ -199,7 +247,9 @@ func (joinOp *EqualityJoin) Iterator(tid TransactionID) (func() (*Tuple, error),
 						// add value to our left buffer map
 						switch leftStringVal := leftValue.(type) {
 						case IntField:
-							return nil, GoDBError{TypeMismatchError, "Should never get here"}
+							return nil, GoDBError{TypeMismatchError, "Should never get here 5"}
+						case FloatField:
+							return nil, GoDBError{TypeMismatchError, "Should never get here 6"}
 
 						case StringField:
 							_, ok := leftBufferString[leftStringVal.Value]
@@ -241,6 +291,20 @@ func (joinOp *EqualityJoin) Iterator(tid TransactionID) (func() (*Tuple, error),
 			switch rightVal := rightValue.(type) {
 			case IntField:
 				matchingTuples, ok := leftBufferInt[rightVal.Value]
+				if !ok {
+					break
+				}
+				if len(matchingTuples) == 0 {
+					return nil, GoDBError{TypeMismatchError, fmt.Sprintf("Got length 0 match for %v, shouldn't happen", rightVal.Value)}
+				}
+				DebugJoin("got hit, len matching tuples is %v", len(matchingTuples))
+				processingHashList = true
+				currentListIdx = 0
+				currentLeftTupleList = matchingTuples
+				currentRightTuple = tup
+				return joinTuples(matchingTuples[0], tup), nil
+			case FloatField:
+				matchingTuples, ok := leftBufferFloat[rightVal.Value]
 				if !ok {
 					break
 				}

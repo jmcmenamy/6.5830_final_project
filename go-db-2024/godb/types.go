@@ -126,6 +126,31 @@ func (i1 IntField) EvalPred(v2 DBValue, op BoolOp) bool {
 	}
 }
 
+func (i1 FloatField) EvalPred(v2 DBValue, op BoolOp) bool {
+	i2, ok := v2.(FloatField)
+	if !ok {
+		return false
+	}
+	x1 := i1.Value
+	x2 := i2.Value
+	switch op {
+	case OpEq:
+		return x1 == x2
+	case OpNeq:
+		return x1 != x2
+	case OpGt:
+		return x1 > x2
+	case OpGe:
+		return x1 >= x2
+	case OpLt:
+		return x1 < x2
+	case OpLe:
+		return x1 <= x2
+	default:
+		return false
+	}
+}
+
 func (i1 StringField) EvalPred(v2 DBValue, op BoolOp) bool {
 	i2, ok := v2.(StringField)
 	if !ok {

@@ -684,13 +684,26 @@ func (s *LogicalSelectNode) generateExpr(c *Catalog, inputDesc *TupleDesc, table
 	case ExprConst:
 		var fval DBValue
 		constType := StringType
-		intFval, e := strconv.Atoi(s.value)
+		floatFVal, e := strconv.ParseFloat(s.value, 64)
 		if e == nil {
-			constType = IntType
-			fval = IntField{int64(intFval)}
+			intFVal := int64(floatFVal)
+			if floatFVal == float64(intFVal) {
+				constType = IntType
+				fval = IntField{intFVal}
+			} else {
+				constType = FloatType
+				fval = FloatField{floatFVal}
+			}
 		} else {
 			fval = StringField{s.value}
 		}
+		// intFval, e := strconv.Atoi(s.value)
+		// if e == nil {
+		// 	constType = IntType
+		// 	fval = IntField{int64(intFval)}
+		// } else {
+		// 	fval = StringField{s.value}
+		// }
 		fieldName := s.value
 		if s.alias != "" {
 			fieldName = s.alias
@@ -1382,6 +1395,8 @@ func processDDL(c *Catalog, ddl *sqlparser.DDL) (QueryType, error) {
 			switch col.Type.Type {
 			case "int":
 				colType = IntType
+			case "float":
+				colType = FloatType
 			case "string":
 				fallthrough
 			case "text":

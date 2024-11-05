@@ -76,27 +76,40 @@ type FuncType struct {
 	f        func([]any) any
 }
 
+var overloadedFuncs = map[string][]FuncType{
+	"+":    {{[]DBType{FloatType, FloatType}, FloatType, addFuncFloats}, {[]DBType{IntType, IntType}, IntType, addFuncInts}, {[]DBType{FloatType, IntType}, FloatType, addFuncFloats}, {[]DBType{IntType, FloatType}, FloatType, addFuncFloats}},
+	"-":    {{[]DBType{FloatType, FloatType}, FloatType, minusFuncFloats}, {[]DBType{IntType, IntType}, IntType, minusFuncInts}, {[]DBType{FloatType, IntType}, FloatType, minusFuncFloats}, {[]DBType{IntType, FloatType}, FloatType, minusFuncFloats}},
+	"*":    {{[]DBType{FloatType, FloatType}, FloatType, timesFuncFloats}, {[]DBType{IntType, IntType}, IntType, timesFuncInts}, {[]DBType{FloatType, IntType}, FloatType, timesFuncFloats}, {[]DBType{IntType, FloatType}, FloatType, timesFuncFloats}},
+	"/":    {{[]DBType{FloatType, FloatType}, FloatType, divFuncFloats}, {[]DBType{IntType, IntType}, IntType, divFuncInts}, {[]DBType{FloatType, IntType}, FloatType, divFuncFloats}, {[]DBType{IntType, FloatType}, FloatType, divFuncFloats}},
+	"sq":   {{[]DBType{FloatType}, FloatType, sqFuncFloat}, {[]DBType{IntType}, IntType, sqFuncInt}},
+	"nmin": {{[]DBType{FloatType, FloatType}, FloatType, minFuncFloats}, {[]DBType{IntType, IntType}, IntType, minFuncInts}, {[]DBType{FloatType, IntType}, FloatType, minFuncFloats}, {[]DBType{IntType, FloatType}, FloatType, minFuncFloats}},
+	"nmax": {{[]DBType{FloatType, FloatType}, FloatType, maxFuncFloats}, {[]DBType{IntType, IntType}, IntType, maxFuncInts}, {[]DBType{FloatType, IntType}, FloatType, maxFuncFloats}, {[]DBType{IntType, FloatType}, FloatType, maxFuncFloats}},
+}
+
 var funcs = map[string]FuncType{
 	//note should all be lower case
-	"+":                     {[]DBType{IntType, IntType}, IntType, addFunc},
-	"-":                     {[]DBType{IntType, IntType}, IntType, minusFunc},
-	"*":                     {[]DBType{IntType, IntType}, IntType, timesFunc},
-	"/":                     {[]DBType{IntType, IntType}, IntType, divFunc},
-	"mod":                   {[]DBType{IntType, IntType}, IntType, modFunc},
-	"rand":                  {[]DBType{}, IntType, randIntFunc},
-	"sq":                    {[]DBType{IntType}, IntType, sqFunc},
+	// "+":                     {[]DBType{FloatType, FloatType}, FloatType, addFunc},
+	// "-":                     {[]DBType{FloatType, FloatType}, FloatType, minusFunc},
+	// "*":                     {[]DBType{FloatType, FloatType}, FloatType, timesFunc},
+	// "/":                     {[]DBType{FloatType, FloatType}, FloatType, divFunc},
+	"mod":       {[]DBType{IntType, IntType}, IntType, modFunc},
+	"randInt":   {[]DBType{}, IntType, randIntFunc},
+	"randFloat": {[]DBType{FloatType, FloatType}, FloatType, randFloatFunc},
+	// "sq":                    {[]DBType{FloatType}, FloatType, sqFunc},
 	"getsubstr":             {[]DBType{StringType, IntType, IntType}, StringType, subStrFunc},
 	"epoch":                 {[]DBType{}, IntType, epoch},
 	"datetimestringtoepoch": {[]DBType{StringType}, IntType, dateTimeToEpoch},
 	"datestringtoepoch":     {[]DBType{StringType}, IntType, dateToEpoch},
 	"epochtodatetimestring": {[]DBType{IntType}, StringType, dateString},
-	"imin":                  {[]DBType{IntType, IntType}, IntType, minFunc},
-	"imax":                  {[]DBType{IntType, IntType}, IntType, maxFunc},
+	"imin":                  {[]DBType{IntType, IntType}, IntType, minFuncInts},
+	"imax":                  {[]DBType{IntType, IntType}, IntType, maxFuncInts},
+	"fmin":                  {[]DBType{FloatType, FloatType}, FloatType, minFuncFloats},
+	"fmax":                  {[]DBType{FloatType, FloatType}, FloatType, minFuncFloats},
 }
 
 func ListOfFunctions() string {
 	fList := ""
-	for name, f := range funcs {
+	processFunc := func(name string, f FuncType) {
 		args := "("
 		argList := f.argTypes
 		hasArg := false
@@ -107,6 +120,8 @@ func ListOfFunctions() string {
 			switch a {
 			case IntType:
 				args = args + "int"
+			case FloatType:
+				args = args + "float"
 			case StringType:
 				args = args + "string"
 			}
@@ -115,9 +130,17 @@ func ListOfFunctions() string {
 		args = args + ")"
 		fList = fList + "\t" + name + args + "\n"
 	}
+	for name, funcList := range overloadedFuncs {
+		for _, f := range funcList {
+			processFunc(name, f)
+		}
+	}
+	for name, f := range funcs {
+		processFunc(name, f)
+	}
 	return fList
 }
-func minFunc(args []any) any {
+func minFuncInts(args []any) any {
 	first := args[0].(int64)
 	second := args[1].(int64)
 	if first < second {
@@ -126,9 +149,27 @@ func minFunc(args []any) any {
 	return second
 }
 
-func maxFunc(args []any) any {
+func minFuncFloats(args []any) any {
+	first := args[0].(float64)
+	second := args[1].(float64)
+	if first < second {
+		return first
+	}
+	return second
+}
+
+func maxFuncInts(args []any) any {
 	first := args[0].(int64)
 	second := args[1].(int64)
+	if first >= second {
+		return first
+	}
+	return second
+}
+
+func maxFuncFloats(args []any) any {
+	first := args[0].(float64)
+	second := args[1].(float64)
 	if first >= second {
 		return first
 	}
@@ -169,28 +210,52 @@ func randIntFunc(args []any) any {
 	return int64(rand.Int())
 }
 
+func randFloatFunc(args []any) any {
+	return args[0].(float64) + rand.Float64()*(args[1].(float64)-args[0].(float64))
+}
+
 func modFunc(args []any) any {
 	return args[0].(int64) % args[1].(int64)
 }
 
-func divFunc(args []any) any {
+func divFuncInts(args []any) any {
 	return args[0].(int64) / args[1].(int64)
 }
 
-func timesFunc(args []any) any {
+func divFuncFloats(args []any) any {
+	return args[0].(float64) / args[1].(float64)
+}
+
+func timesFuncInts(args []any) any {
 	return args[0].(int64) * args[1].(int64)
 }
 
-func minusFunc(args []any) any {
+func timesFuncFloats(args []any) any {
+	return args[0].(float64) * args[1].(float64)
+}
+
+func minusFuncInts(args []any) any {
 	return args[0].(int64) - args[1].(int64)
 }
 
-func addFunc(args []any) any {
+func minusFuncFloats(args []any) any {
+	return args[0].(float64) - args[1].(float64)
+}
+
+func addFuncInts(args []any) any {
 	return args[0].(int64) + args[1].(int64)
 }
 
-func sqFunc(args []any) any {
+func addFuncFloats(args []any) any {
+	return args[0].(float64) + args[1].(float64)
+}
+
+func sqFuncInt(args []any) any {
 	return args[0].(int64) * args[0].(int64)
+}
+
+func sqFuncFloat(args []any) any {
+	return args[0].(float64) * args[0].(float64)
 }
 
 func subStrFunc(args []any) any {
@@ -211,41 +276,65 @@ func subStrFunc(args []any) any {
 }
 
 func (f *FuncExpr) EvalExpr(t *Tuple) (DBValue, error) {
+	processFunc := func(fType FuncType) (DBValue, error) {
+		if len(f.args) != len(fType.argTypes) {
+			return nil, GoDBError{ParseError, fmt.Sprintf("function %s expected %d args", f.op, len(fType.argTypes))}
+		}
+		argvals := make([]any, len(fType.argTypes))
+		for i, argType := range fType.argTypes {
+			arg := *f.args[i]
+			if arg.GetExprType().Ftype != argType {
+				typeName := "string"
+				switch argType {
+				case IntType:
+					typeName = "int"
+				case FloatType:
+					typeName = "float"
+				}
+				return nil, GoDBError{ParseError, fmt.Sprintf("function %s expected arg of type %s, got %v expected %v", f.op, typeName, arg.GetExprType().Ftype, argType)}
+			}
+			val, err := arg.EvalExpr(t)
+			if err != nil {
+				return nil, err
+			}
+			switch argType {
+			case IntType:
+				argvals[i] = val.(IntField).Value
+			case FloatType:
+				argvals[i] = val.(FloatField).Value
+			case StringType:
+				argvals[i] = val.(StringField).Value
+			}
+		}
+		result := fType.f(argvals)
+		switch fType.outType {
+		case IntType:
+			return IntField{result.(int64)}, nil
+		case FloatType:
+			return FloatField{result.(float64)}, nil
+		case StringType:
+			return StringField{result.(string)}, nil
+		}
+		return nil, GoDBError{ParseError, "unknown result type in function"}
+	}
+	funcList, exists := overloadedFuncs[f.op]
+	if exists {
+		for _, funcType := range funcList {
+			val, err := processFunc(funcType)
+			if err == nil {
+				return val, err
+			}
+			fmt.Printf("got err %v for %v and %v\n", err, f, funcType)
+		}
+		args := make([]FieldType, len(f.args))
+		for i, e := range f.args {
+			args[i] = (*e).GetExprType()
+		}
+		return nil, GoDBError{ParseError, fmt.Sprintf("unknown function %v %v", f, args)}
+	}
 	fType, exists := funcs[f.op]
 	if !exists {
 		return nil, GoDBError{ParseError, fmt.Sprintf("unknown function %s", f.op)}
 	}
-	if len(f.args) != len(fType.argTypes) {
-		return nil, GoDBError{ParseError, fmt.Sprintf("function %s expected %d args", f.op, len(fType.argTypes))}
-	}
-	argvals := make([]any, len(fType.argTypes))
-	for i, argType := range fType.argTypes {
-		arg := *f.args[i]
-		if arg.GetExprType().Ftype != argType {
-			typeName := "string"
-			switch argType {
-			case IntType:
-				typeName = "int"
-			}
-			return nil, GoDBError{ParseError, fmt.Sprintf("function %s expected arg of type %s", f.op, typeName)}
-		}
-		val, err := arg.EvalExpr(t)
-		if err != nil {
-			return nil, err
-		}
-		switch argType {
-		case IntType:
-			argvals[i] = val.(IntField).Value
-		case StringType:
-			argvals[i] = val.(StringField).Value
-		}
-	}
-	result := fType.f(argvals)
-	switch fType.outType {
-	case IntType:
-		return IntField{result.(int64)}, nil
-	case StringType:
-		return StringField{result.(string)}, nil
-	}
-	return nil, GoDBError{ParseError, "unknown result type in function"}
+	return processFunc(fType)
 }

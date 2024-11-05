@@ -75,20 +75,22 @@ func (a *CountAggState) GetTupleDesc() *TupleDesc {
 
 // Implements the aggregation state for SUM
 type SumAggState struct {
-	alias  string
-	expr   Expr
-	sumInt int64
-	sumStr string
+	alias    string
+	expr     Expr
+	sumInt   int64
+	sumFloat float64
+	sumStr   string
 }
 
 func (a *SumAggState) Copy() AggState {
 	// TODO: some code goes here
-	return &SumAggState{a.alias, a.expr, a.sumInt, a.sumStr}
+	return &SumAggState{a.alias, a.expr, a.sumInt, a.sumFloat, a.sumStr}
 }
 
 func (a *SumAggState) Init(alias string, expr Expr) error {
 	// TODO: some code goes here
 	a.sumInt = 0
+	a.sumFloat = 0
 	a.sumStr = ""
 	a.expr = expr
 	a.alias = alias
@@ -105,6 +107,8 @@ func (a *SumAggState) AddTuple(t *Tuple) {
 	switch dbType := dbValue.(type) {
 	case IntField:
 		a.sumInt += dbType.Value
+	case FloatField:
+		a.sumFloat += dbType.Value
 	case StringField:
 		a.sumStr += dbType.Value
 	}
@@ -121,6 +125,8 @@ func (a *SumAggState) Finalize() *Tuple {
 	switch a.expr.GetExprType().Ftype {
 	case IntType:
 		f = IntField{a.sumInt}
+	case FloatType:
+		f = FloatField{a.sumFloat}
 	case StringType:
 		f = StringField{a.sumStr}
 	}
@@ -132,15 +138,16 @@ func (a *SumAggState) Finalize() *Tuple {
 // so no worries for divide-by-zero
 type AvgAggState struct {
 	// TODO: some code goes here
-	alias string
-	expr  Expr
-	sum   int64
-	count int
+	alias    string
+	expr     Expr
+	sum      int64
+	sumFloat float64
+	count    int
 }
 
 func (a *AvgAggState) Copy() AggState {
 	// TODO: some code goes here
-	return &AvgAggState{a.alias, a.expr, a.sum, a.count}
+	return &AvgAggState{a.alias, a.expr, a.sum, a.sumFloat, a.count}
 }
 
 func (a *AvgAggState) Init(alias string, expr Expr) error {
@@ -148,6 +155,7 @@ func (a *AvgAggState) Init(alias string, expr Expr) error {
 	if expr.GetExprType().Ftype == StringType {
 		return GoDBError{TypeMismatchError, "Shouldn't be averaging a string column"}
 	}
+	a.sumFloat = 0
 	a.sum = 0
 	a.count = 0
 	a.expr = expr
@@ -166,6 +174,8 @@ func (a *AvgAggState) AddTuple(t *Tuple) {
 	switch dbType := dbValue.(type) {
 	case IntField:
 		a.sum += dbType.Value
+	case FloatField:
+		a.sumFloat += dbType.Value
 	case StringField:
 		DebugAggState("Shouldn't be average a string value!")
 	}
@@ -178,7 +188,14 @@ func (a *AvgAggState) GetTupleDesc() *TupleDesc {
 
 func (a *AvgAggState) Finalize() *Tuple {
 	// TODO: some code goes here
-	return &Tuple{*a.GetTupleDesc(), []DBValue{IntField{a.sum / int64(a.count)}}, nil}
+	var f DBValue
+	switch a.expr.GetExprType().Ftype {
+	case IntType:
+		f = IntField{a.sum / int64(a.count)}
+	case FloatType:
+		f = FloatField{a.sumFloat / float64(a.count)}
+	}
+	return &Tuple{*a.GetTupleDesc(), []DBValue{f}, nil}
 }
 
 // Implements the aggregation state for MAX
@@ -190,18 +207,20 @@ type MaxAggState struct {
 	expr       Expr
 	addedValue bool
 	maxInt     int64
+	maxFloat   float64
 	maxStr     string
 }
 
 func (a *MaxAggState) Copy() AggState {
 	// TODO: some code goes here
-	return &MaxAggState{a.alias, a.expr, a.addedValue, a.maxInt, a.maxStr}
+	return &MaxAggState{a.alias, a.expr, a.addedValue, a.maxInt, a.maxFloat, a.maxStr}
 }
 
 func (a *MaxAggState) Init(alias string, expr Expr) error {
 	// TODO: some code goes here
 	a.addedValue = false
 	a.maxInt = 0
+	a.maxFloat = 0
 	a.maxStr = ""
 	a.expr = expr
 	a.alias = alias
@@ -221,6 +240,13 @@ func (a *MaxAggState) AddTuple(t *Tuple) {
 			a.maxInt = max(a.maxInt, dbType.Value)
 		} else {
 			a.maxInt = dbType.Value
+			a.addedValue = true
+		}
+	case FloatField:
+		if a.addedValue {
+			a.maxFloat = max(a.maxFloat, dbType.Value)
+		} else {
+			a.maxFloat = dbType.Value
 			a.addedValue = true
 		}
 	case StringField:
@@ -244,6 +270,8 @@ func (a *MaxAggState) Finalize() *Tuple {
 	switch a.expr.GetExprType().Ftype {
 	case IntType:
 		f = IntField{a.maxInt}
+	case FloatType:
+		f = FloatField{a.maxFloat}
 	case StringType:
 		f = StringField{a.maxStr}
 	}
@@ -259,18 +287,20 @@ type MinAggState struct {
 	expr       Expr
 	addedValue bool
 	minInt     int64
+	minFloat   float64
 	minStr     string
 }
 
 func (a *MinAggState) Copy() AggState {
 	// TODO: some code goes here
-	return &MinAggState{a.alias, a.expr, a.addedValue, a.minInt, a.minStr}
+	return &MinAggState{a.alias, a.expr, a.addedValue, a.minInt, a.minFloat, a.minStr}
 }
 
 func (a *MinAggState) Init(alias string, expr Expr) error {
 	// TODO: some code goes here
 	a.addedValue = false
 	a.minInt = 0
+	a.minFloat = 0
 	a.minStr = ""
 	a.expr = expr
 	a.alias = alias
@@ -290,6 +320,13 @@ func (a *MinAggState) AddTuple(t *Tuple) {
 			a.minInt = min(a.minInt, dbType.Value)
 		} else {
 			a.minInt = dbType.Value
+			a.addedValue = true
+		}
+	case FloatField:
+		if a.addedValue {
+			a.minFloat = min(a.minFloat, dbType.Value)
+		} else {
+			a.minFloat = dbType.Value
 			a.addedValue = true
 		}
 	case StringField:
@@ -313,6 +350,8 @@ func (a *MinAggState) Finalize() *Tuple {
 	switch a.expr.GetExprType().Ftype {
 	case IntType:
 		f = IntField{a.minInt}
+	case FloatType:
+		f = FloatField{a.minFloat}
 	case StringType:
 		f = StringField{a.minStr}
 	}

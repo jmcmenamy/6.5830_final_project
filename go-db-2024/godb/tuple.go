@@ -18,6 +18,7 @@ const (
 	HeaderSize int = 8
 	// StringLength int = 32
 	Int64Length          int           = 8
+	Float64Lengh         int           = 8
 	RepInvariantViolated GoDBErrorCode = 13
 )
 
@@ -37,6 +38,7 @@ type DBType int
 const (
 	IntType     DBType = iota
 	StringType  DBType = iota
+	FloatType   DBType = iota
 	UnknownType DBType = iota //used internally, during parsing, because sometimes the type is unknown
 )
 
@@ -46,6 +48,8 @@ func (t DBType) String() string {
 		return "int"
 	case StringType:
 		return "string"
+	case FloatType:
+		return "float"
 	}
 	return "unknown"
 }
@@ -183,6 +187,11 @@ type StringField struct {
 	Value string
 }
 
+// Float field value
+type FloatField struct {
+	Value float64
+}
+
 // Tuple represents the contents of a tuple read from a database
 // It includes the tuple descriptor, and the value of the fields
 type Tuple struct {
@@ -244,6 +253,12 @@ func (t *Tuple) writeTo(b *bytes.Buffer) error {
 				return GoDBError{TypeMismatchError, fmt.Sprintf("Should be int type here %v", descType)}
 			}
 			binary.Write(b, binary.LittleEndian, fieldType.Value)
+		case FloatField:
+			// make sure it's a float in the desc
+			if descType := t.Desc.Fields[i].Ftype; descType != FloatType {
+				return GoDBError{TypeMismatchError, fmt.Sprintf("Should be float type here %v", descType)}
+			}
+			binary.Write(b, binary.LittleEndian, fieldType.Value)
 		}
 	}
 
@@ -299,6 +314,15 @@ func readTupleFrom(b *bytes.Buffer, desc *TupleDesc) (*Tuple, error) {
 			}
 
 			tuple.Fields[i] = IntField{Value: intValue}
+		case FloatType:
+
+			var floatValue float64
+			err = binary.Read(b, binary.LittleEndian, &floatValue)
+			if err != nil {
+				return &tuple, err
+			}
+
+			tuple.Fields[i] = FloatField{Value: floatValue}
 		}
 	}
 
@@ -442,6 +466,18 @@ func (t *Tuple) compareField(t2 *Tuple, field Expr) (orderByState, error) {
 			return OrderedLessThan, nil
 		}
 		return OrderedEqual, nil
+	case FloatField:
+		t2Type, ok := t2Result.(FloatField)
+		if !ok {
+			return OrderedEqual, GoDBError{TypeMismatchError, fmt.Sprintf("Should never happen, expected float field, got %v and %v", t1FieldType, t2FieldType)}
+		}
+		if t1Type.Value > t2Type.Value {
+			return OrderedGreaterThan, nil
+		}
+		if t1Type.Value < t2Type.Value {
+			return OrderedLessThan, nil
+		}
+		return OrderedEqual, nil
 	default:
 		return OrderedEqual, GoDBError{TypeMismatchError, fmt.Sprintf("Unsupported types found, got %v and %v", t1FieldType, t2FieldType)}
 	}
@@ -498,9 +534,12 @@ func fmtCol(v string, ncols int) string {
 	if remLen > 0 {
 		spacesRight := remLen / 2
 		spacesLeft := remLen - spacesRight
+		// fmt.Printf("Formatted %v to %v %v", v, strings.Repeat(" ", spacesLeft)+v+strings.Repeat(" ", spacesRight)+" |", nextLen)
 		return strings.Repeat(" ", spacesLeft) + v + strings.Repeat(" ", spacesRight) + " |"
 	} else {
-		return " " + v[0:colWid-4] + " |"
+		// fmt.Printf("1 Formatted %v to %v %v %v", v, " "+v[0:colWid-4]+" |", nextLen, colWid)
+
+		return "" + v + "|"
 	}
 }
 
@@ -538,6 +577,8 @@ func (t *Tuple) PrettyPrintString(aligned bool) string {
 		switch f := f.(type) {
 		case IntField:
 			str = strconv.FormatInt(f.Value, 10)
+		case FloatField:
+			str = strconv.FormatFloat(f.Value, 'g', -1, 64)
 		case StringField:
 			str = f.Value
 		}
