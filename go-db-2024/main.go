@@ -198,7 +198,6 @@ func main() {
 				pathAr := strings.Split(path, "/")
 				catName = pathAr[len(pathAr)-1]
 				catPath = strings.Join(pathAr[0:len(pathAr)-1], "/")
-				fmt.Printf("uhhh %v %v\n", catName, catPath)
 				c, err = godb.NewCatalogFromFile(catName, bp, catPath)
 				if err != nil {
 					fmt.Printf("failed load catalog, %s\n", err.Error())
@@ -210,7 +209,6 @@ func main() {
 				// load the csv files to each table
 
 				for _, tableName := range c.TableNames() {
-					fmt.Printf("uhh %v\n", tableName)
 					//todo -- following code assumes data is in heap files
 					hf, err := c.GetTable(tableName)
 					if err != nil {

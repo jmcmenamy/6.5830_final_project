@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -84,6 +85,82 @@ func (f *HeapFile) NumPages() int {
 	return f.numPages
 }
 
+// Get the byte offset value for each line in the file
+func getLineOffsets(file *os.File) []int64 {
+	var offsets []int64
+	scanner := bufio.NewScanner(file)
+	offset := int64(0)
+	for scanner.Scan() {
+		offsets = append(offsets, offset)
+		offset += int64(len(scanner.Bytes()) + 1) // +1 for newline character
+	}
+
+	return offsets
+}
+
+// Get a random sample of byte offsets
+func getSampledOffsets(offsets []int64, sampleRate float32) []int64 {
+	sampleSize := int(float32(len(offsets)) * sampleRate)
+	sampledIndices := rand.Perm(len(offsets))[:sampleSize]
+
+	sampledOffsets := make([]int64, sampleSize)
+	for i, index := range sampledIndices {
+		sampledOffsets[i] = offsets[index]
+	}
+
+	return sampledOffsets
+}
+
+// Convert a line read from a CSV file to a tuple and insert into heap file
+func (f *HeapFile) loadLine(line string, sep string) error {
+	fields := strings.Split(line, sep)
+	numFields := len(fields)
+
+	desc := f.Descriptor()
+	if desc == nil || desc.Fields == nil {
+		return GoDBError{MalformedDataError, "Descriptor was nil"}
+	}
+	if numFields != len(desc.Fields) {
+		return GoDBError{MalformedDataError, fmt.Sprintf("LoadFromCSV:  line (%s) does not have expected number of fields (expected %d, got %d)", line, len(f.Descriptor().Fields), numFields)}
+	}
+
+	var newFields []DBValue
+	for fno, field := range fields {
+		switch f.Descriptor().Fields[fno].Ftype {
+		case IntType:
+			field = strings.TrimSpace(field)
+			floatVal, err := strconv.ParseFloat(field, 64)
+			if err != nil {
+				return GoDBError{TypeMismatchError, fmt.Sprintf("LoadFromCSV: couldn't convert value %s to int", field)}
+			}
+			intValue := int(floatVal)
+			newFields = append(newFields, IntField{int64(intValue)})
+		case FloatType:
+			field = strings.TrimSpace(field)
+			floatVal, err := strconv.ParseFloat(field, 64)
+			if err != nil {
+				return GoDBError{TypeMismatchError, fmt.Sprintf("LoadFromCSV: couldn't convert value %s to int", field)}
+			}
+			floatValue := float64(floatVal)
+			newFields = append(newFields, FloatField{floatValue})
+		case StringType:
+			if len(field) > StringLength {
+				field = field[0:StringLength]
+			}
+			newFields = append(newFields, StringField{field})
+		}
+	}
+	newT := Tuple{*f.Descriptor(), newFields, nil}
+	tid := NewTID()
+	err := f.insertTuple(&newT, tid)
+	if err != nil {
+		fmt.Printf("error with inserting tuple")
+		return err
+	}
+
+	return nil
+}
+
 // Load the contents of a heap file from a specified CSV file.  Parameters are as follows:
 // - hasHeader:  whether or not the CSV file has a header
 // - sep: the character to use to separate fields
@@ -94,63 +171,33 @@ func (f *HeapFile) NumPages() int {
 func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool) error {
 	f.bufPool.CanFlushWhenFull = true
 	defer func() { f.bufPool.CanFlushWhenFull = false }()
-	scanner := bufio.NewScanner(file)
-	cnt := 0
-	i := 0
-	for scanner.Scan() {
-		if i%100 == 0 {
-			fmt.Printf("Reading row %v of %v\n", i, file.Name())
-		}
-		line := scanner.Text()
-		fields := strings.Split(line, sep)
-		if skipLastField {
-			fields = fields[0 : len(fields)-1]
-		}
-		numFields := len(fields)
-		cnt++
-		desc := f.Descriptor()
-		if desc == nil || desc.Fields == nil {
-			return GoDBError{MalformedDataError, "Descriptor was nil"}
-		}
-		if numFields != len(desc.Fields) {
-			return GoDBError{MalformedDataError, fmt.Sprintf("LoadFromCSV:  line %d (%s) does not have expected number of fields (expected %d, got %d)", cnt, line, len(f.Descriptor().Fields), numFields)}
-		}
-		if cnt == 1 && hasHeader {
-			continue
-		}
-		var newFields []DBValue
-		for fno, field := range fields {
-			switch f.Descriptor().Fields[fno].Ftype {
-			case IntType:
-				field = strings.TrimSpace(field)
-				floatVal, err := strconv.ParseFloat(field, 64)
-				if err != nil {
-					return GoDBError{TypeMismatchError, fmt.Sprintf("LoadFromCSV: couldn't convert value %s to int, tuple %d", field, cnt)}
-				}
-				intValue := int(floatVal)
-				newFields = append(newFields, IntField{int64(intValue)})
-			case FloatType:
-				field = strings.TrimSpace(field)
-				floatVal, err := strconv.ParseFloat(field, 64)
-				if err != nil {
-					return GoDBError{TypeMismatchError, fmt.Sprintf("LoadFromCSV: couldn't convert value %s to int, tuple %d", field, cnt)}
-				}
-				floatValue := float64(floatVal)
-				newFields = append(newFields, FloatField{floatValue})
-			case StringType:
-				if len(field) > StringLength {
-					field = field[0:StringLength]
-				}
-				newFields = append(newFields, StringField{field})
+	offsets := getLineOffsets(file)
+
+	samplingThreshold := 1000
+	var sampleRate float32 = 0.01
+	if len(offsets) >= samplingThreshold {
+		reader := bufio.NewReader(file)
+
+		sampledOffsets := getSampledOffsets(offsets, sampleRate)
+		for _, offset := range sampledOffsets {
+			file.Seek(offset, 0)
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("error reading line at byte offset %v", offset)
 			}
+
+			f.loadLine(line, sep)
+
+			reader.Reset(file)
 		}
-		newT := Tuple{*f.Descriptor(), newFields, nil}
-		tid := NewTID()
-		err := f.insertTuple(&newT, tid)
-		if err != nil {
-			return err
+	} else {
+		file.Seek(0, 0)
+		scanner := bufio.NewScanner(file)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			f.loadLine(line, sep)
 		}
-		i += 1
 	}
 	bp := f.bufPool
 	// Force dirty pages to disk. CommitTransaction may not be implemented
