@@ -1259,7 +1259,7 @@ func makePhysicalPlan(c *Catalog, plan *LogicalPlan) (*OperatorCard, error) {
 	return topOp, nil
 }
 
-func parseInsert(c *Catalog, insStmt *sqlparser.Insert) (Operator, error) {
+func parseInsert(c *Catalog, insStmt *sqlparser.Insert, tableNames map[string]bool) (Operator, error) {
 	if insStmt.Columns != nil {
 		return nil, GoDBError{ParseError, "GoDB doesn't support inserts of incomplete tuples"}
 	}
@@ -1293,6 +1293,12 @@ func parseInsert(c *Catalog, insStmt *sqlparser.Insert) (Operator, error) {
 
 	case *sqlparser.Select:
 		plan, err := parseStatement(c, stmt)
+		// gather all table names
+		if tableNames != nil {
+			for _, tb := range plan.tables {
+				tableNames[tb.tableName] = true
+			}
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -1307,11 +1313,16 @@ func parseInsert(c *Catalog, insStmt *sqlparser.Insert) (Operator, error) {
 	return nil, nil
 }
 
-func parseDelete(c *Catalog, delStmt *sqlparser.Delete) (Operator, error) {
+func parseDelete(c *Catalog, delStmt *sqlparser.Delete, tableNames map[string]bool) (Operator, error) {
 	if len(delStmt.TableExprs) > 1 {
 		return nil, GoDBError{ParseError, "godb does not supporting deleting from multiple tables"}
 	}
 	tables, subplans, joins, err := parseFrom(c, delStmt.TableExprs[0])
+	if tableNames != nil {
+		for _, table := range tables {
+			tableNames[table.tableName] = true
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1428,50 +1439,54 @@ func processDDL(c *Catalog, ddl *sqlparser.DDL) (QueryType, error) {
 	}
 }
 
-func Parse(c *Catalog, query string) (QueryType, Operator, error) {
+func Parse(c *Catalog, query string) (map[string]bool, QueryType, Operator, error) {
 	stmt, err := sqlparser.Parse(query)
 	if err != nil {
-		return UnknownQueryType, nil, err
+		return nil, UnknownQueryType, nil, err
 	}
+	tableNames := make(map[string]bool)
 	switch stmt := stmt.(type) {
 	case *sqlparser.Select:
 		plan, err := parseStatement(c, stmt)
+		for _, table := range plan.tables {
+			tableNames[table.tableName] = true
+		}
 		if err != nil {
 			//fmt.Printf("Err: %s\n", err.Error())
-			return UnknownQueryType, nil, err
+			return tableNames, UnknownQueryType, nil, err
 		}
 		op, err := makePhysicalPlan(c, plan)
 		if err != nil {
 			//fmt.Printf("Err: %s\n", err.Error())
-			return UnknownQueryType, nil, err
+			return tableNames, UnknownQueryType, nil, err
 		}
-		return IteratorType, op, nil
+		return tableNames, IteratorType, op, nil
 	case *sqlparser.Insert:
-		op, err := parseInsert(c, stmt)
+		op, err := parseInsert(c, stmt, tableNames)
 		if err != nil {
-			return UnknownQueryType, nil, err
+			return tableNames, UnknownQueryType, nil, err
 		}
-		return IteratorType, op, nil
+		return tableNames, IteratorType, op, nil
 	case *sqlparser.Delete:
-		op, err := parseDelete(c, stmt)
+		op, err := parseDelete(c, stmt, tableNames)
 		if err != nil {
-			return UnknownQueryType, nil, err
+			return tableNames, UnknownQueryType, nil, err
 		}
-		return IteratorType, op, nil
+		return tableNames, IteratorType, op, nil
 	case *sqlparser.Begin:
-		return BeginXactionType, nil, nil
+		return tableNames, BeginXactionType, nil, nil
 	case *sqlparser.Commit:
-		return CommitXactionType, nil, nil
+		return tableNames, CommitXactionType, nil, nil
 	case *sqlparser.Rollback:
-		return AbortXactionType, nil, nil
+		return tableNames, AbortXactionType, nil, nil
 	case *sqlparser.DDL:
 		qtype, err := processDDL(c, stmt)
 		if err != nil {
-			return UnknownQueryType, nil, err
+			return tableNames, UnknownQueryType, nil, err
 		} else {
-			return qtype, nil, nil
+			return tableNames, qtype, nil, nil
 		}
 	}
 
-	return UnknownQueryType, nil, GoDBError{ParseError, "invalid query"}
+	return tableNames, UnknownQueryType, nil, GoDBError{ParseError, "invalid query"}
 }

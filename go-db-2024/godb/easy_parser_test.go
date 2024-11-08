@@ -39,7 +39,7 @@ func TestParseEasy(t *testing.T) {
 		tid := BeginTransactionForTest(t, bp)
 		qNo++
 
-		qType, plan, err := Parse(c, query.SQL)
+		_, qType, plan, err := Parse(c, query.SQL)
 		if err != nil {
 			t.Fatalf("failed to parse, q=%s, %s", query.SQL, err.Error())
 		}

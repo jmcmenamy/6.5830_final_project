@@ -37,6 +37,7 @@ type HeapFile struct {
 	file               *os.File
 	pagesWithFreeSpace map[int]bool
 	numInserted        int
+	offSetsLoaded      map[int64]bool
 }
 
 // Create a HeapFile.
@@ -70,6 +71,7 @@ func NewHeapFile(fromFile string, td *TupleDesc, bp *BufferPool) (*HeapFile, err
 		return nil, err
 	}
 	heapFile.file = file
+	heapFile.offSetsLoaded = make(map[int64]bool)
 	return heapFile, nil //replace me
 }
 
@@ -168,28 +170,61 @@ func (f *HeapFile) loadLine(line string, sep string) error {
 // Returns an error if the field cannot be opened or if a line is malformed
 // We provide the implementation of this method, but it won't work until
 // [HeapFile.insertTuple] and some other utility functions are implemented
-func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool) error {
+func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool) error {
 	f.bufPool.CanFlushWhenFull = true
 	defer func() { f.bufPool.CanFlushWhenFull = false }()
-	offsets := getLineOffsets(file)
+
+	// offsets := getLineOffsets(file)
 
 	samplingThreshold := 1000
-	var sampleRate float32 = 0.01
-	if len(offsets) >= samplingThreshold {
+	var sampleRate float64 = 0.01
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	estimatedLinesInFile := int(fileInfo.Size()) / f.tupleSize
+	if estimatedLinesInFile >= samplingThreshold {
 		reader := bufio.NewReader(file)
+		numSampledLines := 0
+		for numSampledLines < int(sampleRate*float64(estimatedLinesInFile)) || len(f.offSetsLoaded) >= estimatedLinesInFile-100 {
+			randomOffset := rand.Int63n(fileInfo.Size() - 1)
+			file.Seek(randomOffset, io.SeekStart)
+			_, err := reader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("error reading line at byte offset %v", randomOffset)
+			}
+			newOffset, err := file.Seek(0, io.SeekCurrent)
+			if err != nil {
+				return err
+			}
+			if f.offSetsLoaded[newOffset] {
+				continue
+			}
+			f.offSetsLoaded[newOffset] = true
+			numSampledLines++
 
-		sampledOffsets := getSampledOffsets(offsets, sampleRate)
-		for _, offset := range sampledOffsets {
-			file.Seek(offset, 0)
 			line, err := reader.ReadString('\n')
 			if err != nil {
-				return fmt.Errorf("error reading line at byte offset %v", offset)
+				return fmt.Errorf("error reading line at byte offset %v", newOffset)
 			}
 
 			f.loadLine(line, sep)
 
 			reader.Reset(file)
 		}
+
+		// sampledOffsets := getSampledOffsets(offsets, sampleRate)
+		// for _, offset := range sampledOffsets {
+		// 	file.Seek(offset, 0)
+		// 	line, err := reader.ReadString('\n')
+		// 	if err != nil {
+		// 		return fmt.Errorf("error reading line at byte offset %v", offset)
+		// 	}
+
+		// 	f.loadLine(line, sep)
+
+		// 	reader.Reset(file)
+		// }
 	} else {
 		file.Seek(0, 0)
 		scanner := bufio.NewScanner(file)
@@ -198,6 +233,81 @@ func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 			line := scanner.Text()
 			f.loadLine(line, sep)
 		}
+	}
+	bp := f.bufPool
+	// Force dirty pages to disk. CommitTransaction may not be implemented
+	// yet if this is called in lab 1 or 2.
+	bp.FlushAllPages()
+	return nil
+}
+
+// Load the contents of a heap file from a specified CSV file.  Parameters are as follows:
+// - hasHeader:  whether or not the CSV file has a header
+// - sep: the character to use to separate fields
+// - skipLastField: if true, the final field is skipped (some TPC datasets include a trailing separator on each line)
+// Returns an error if the field cannot be opened or if a line is malformed
+// We provide the implementation of this method, but it won't work until
+// [HeapFile.insertTuple] and some other utility functions are implemented
+func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool) error {
+	f.bufPool.CanFlushWhenFull = true
+	defer func() { f.bufPool.CanFlushWhenFull = false }()
+	scanner := bufio.NewScanner(file)
+	cnt := 0
+	i := 0
+	for scanner.Scan() {
+		if i%100 == 0 {
+			fmt.Printf("Reading row %v of %v\n", i, file.Name())
+		}
+		line := scanner.Text()
+		fields := strings.Split(line, sep)
+		if skipLastField {
+			fields = fields[0 : len(fields)-1]
+		}
+		numFields := len(fields)
+		cnt++
+		desc := f.Descriptor()
+		if desc == nil || desc.Fields == nil {
+			return GoDBError{MalformedDataError, "Descriptor was nil"}
+		}
+		if numFields != len(desc.Fields) {
+			return GoDBError{MalformedDataError, fmt.Sprintf("LoadFromCSV:  line %d (%s) does not have expected number of fields (expected %d, got %d)", cnt, line, len(f.Descriptor().Fields), numFields)}
+		}
+		if cnt == 1 && hasHeader {
+			continue
+		}
+		var newFields []DBValue
+		for fno, field := range fields {
+			switch f.Descriptor().Fields[fno].Ftype {
+			case IntType:
+				field = strings.TrimSpace(field)
+				floatVal, err := strconv.ParseFloat(field, 64)
+				if err != nil {
+					return GoDBError{TypeMismatchError, fmt.Sprintf("LoadFromCSV: couldn't convert value %s to int, tuple %d", field, cnt)}
+				}
+				intValue := int(floatVal)
+				newFields = append(newFields, IntField{int64(intValue)})
+			case FloatType:
+				field = strings.TrimSpace(field)
+				floatVal, err := strconv.ParseFloat(field, 64)
+				if err != nil {
+					return GoDBError{TypeMismatchError, fmt.Sprintf("LoadFromCSV: couldn't convert value %s to int, tuple %d", field, cnt)}
+				}
+				floatValue := float64(floatVal)
+				newFields = append(newFields, FloatField{floatValue})
+			case StringType:
+				if len(field) > StringLength {
+					field = field[0:StringLength]
+				}
+				newFields = append(newFields, StringField{field})
+			}
+		}
+		newT := Tuple{*f.Descriptor(), newFields, nil}
+		tid := NewTID()
+		err := f.insertTuple(&newT, tid)
+		if err != nil {
+			return err
+		}
+		i += 1
 	}
 	bp := f.bufPool
 	// Force dirty pages to disk. CommitTransaction may not be implemented

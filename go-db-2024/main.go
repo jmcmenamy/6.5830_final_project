@@ -24,7 +24,10 @@ Available shell commands:
 	\a : Toggle aligned vs csv output
     \o : Toggle query optimization
 	\l table path/to/file [sep] [hasHeader]: Append csv file to end of table.  Default to sep = ',', hasHeader = 'true'
-	\i path/to/file [extension] [sep] [hasHeader] : Change the current database to a specified catalog file, and load from csv-like files in same directory as catalog file, with given separator Default to extension = 'tbl', sep = '|', hasHeader = 'true'
+	\i path/to/file [extension] [sep] [hasHeader] [mode]: Change the current database to a specified catalog file, and load from csv-like files in same directory as catalog file, with given separator Default to mode = 'All' (Options 'All', 'Some', 'Diagnostic'), extension = 'tbl', sep = '|', hasHeader = 'true'
+		- mode 'All' loads all the data from the csv
+		- mode 'Some' loads only some of the data from the csv
+		- mode 'Diagnostic' uses both strategies for each query, displaying results for each mode
 	\z : Compute statistics for the database`
 
 func printCatalog(c *godb.Catalog) {
@@ -56,6 +59,10 @@ func main() {
 
 	catName := "catalog.txt"
 	catPath := "godb"
+	mode := "Some"
+	extension := "tbl"
+	sep := "|"
+	hasHeader := false
 
 	c, err := godb.NewCatalogFromFile(catName, bp, catPath)
 	if err != nil {
@@ -183,17 +190,17 @@ func main() {
 				}
 				splits := strings.Split(text, " ")
 				path := splits[1]
-				extension := "tbl"
-				sep := "|"
-				hasHeader := true
 				if len(splits) > 2 {
-					extension = splits[2]
+					mode = splits[2]
 				}
 				if len(splits) > 3 {
-					sep = splits[3]
+					extension = splits[3]
 				}
 				if len(splits) > 4 {
-					hasHeader = splits[4] != "false"
+					sep = splits[4]
+				}
+				if len(splits) > 5 {
+					hasHeader = splits[5] != "false"
 				}
 				pathAr := strings.Split(path, "/")
 				catName = pathAr[len(pathAr)-1]
@@ -207,6 +214,10 @@ func main() {
 				printCatalog(c)
 
 				// load the csv files to each table
+
+				if mode == "Some" {
+					continue
+				}
 
 				for _, tableName := range c.TableNames() {
 					//todo -- following code assumes data is in heap files
@@ -248,7 +259,7 @@ func main() {
 			explain = true
 		}
 
-		queryType, plan, err := godb.Parse(c, query)
+		tableNames, queryType, plan, err := godb.Parse(c, query)
 		query = ""
 		nresults := 0
 
@@ -272,6 +283,30 @@ func main() {
 			}
 			fmt.Printf("\033[31;1mInvalid query (%s)\033[0m\n", err.Error())
 			continue
+		}
+
+		if mode == "Some" {
+			// load more from each table
+			for tableName, _ := range tableNames {
+				//todo -- following code assumes data is in heap files
+				hf, err := c.GetTable(tableName)
+				if err != nil {
+					fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
+					continue
+				}
+				heapFile := hf.(*godb.HeapFile)
+				f, err := os.Open(fmt.Sprintf("%v/%v.%v", catPath, tableName, extension))
+				if err != nil {
+					fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
+					continue
+				}
+				err = heapFile.LoadSomeFromCSV(f, hasHeader, sep, false)
+				if err != nil {
+					fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
+					continue
+				}
+				fmt.Printf("loaded more info from table %v\n", tableName)
+			}
 		}
 
 		switch queryType {

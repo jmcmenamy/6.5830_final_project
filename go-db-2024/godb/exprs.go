@@ -324,7 +324,6 @@ func (f *FuncExpr) EvalExpr(t *Tuple) (DBValue, error) {
 			if err == nil {
 				return val, err
 			}
-			fmt.Printf("got err %v for %v and %v\n", err, f, funcType)
 		}
 		args := make([]FieldType, len(f.args))
 		for i, e := range f.args {
