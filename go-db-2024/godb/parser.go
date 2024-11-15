@@ -10,6 +10,15 @@ import (
 	"github.com/xwb1989/sqlparser"
 )
 
+var DEBUGPARSER = false
+
+func DebugParser(format string, a ...any) (int, error) {
+	if DEBUGJOIN || GLOBALDEBUG {
+		return fmt.Println(fmt.Sprintf(format, a...))
+	}
+	return 0, nil
+}
+
 type LogicalFilterNode struct {
 	fieldExpr LogicalSelectNode
 	constExpr LogicalSelectNode
@@ -261,6 +270,7 @@ func (p *LogicalPlan) getSubplanFields(c *Catalog) []*FieldType {
 
 // Parse a where statement into a list of filters and joins.
 func parseWhere(c *Catalog, subqueries []*LogicalPlan, ts []*LogicalTableNode, expr sqlparser.Expr) ([]*LogicalFilterNode, []*LogicalJoinNode, error) {
+	DebugParser("in parse where expr is %v\n", expr)
 	switch expr := expr.(type) {
 	case *sqlparser.AndExpr:
 		// Parse AND by parsing left and right sides
@@ -289,6 +299,7 @@ func parseWhere(c *Catalog, subqueries []*LogicalPlan, ts []*LogicalTableNode, e
 		if err != nil {
 			return nil, nil, err
 		}
+		DebugParser("in parseWhere right is %v\n", right.String())
 		if lTable != "" && rTable != "" && lTable != rTable { //join
 			if op != OpEq {
 				return nil, nil, GoDBError{IllegalOperationError, "only equality joins are supported"}
@@ -354,6 +365,7 @@ func parseFrom(c *Catalog, t sqlparser.TableExpr) ([]*LogicalTableNode, []*Logic
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		DebugParser("In parser parsing %v\n", joinTable.RightExpr)
 		rightTables, rightSubplans, rightJoins, err := parseFrom(c, joinTable.RightExpr)
 		if err != nil {
 			return nil, nil, nil, err
@@ -628,6 +640,7 @@ type PlanNode struct {
 }
 
 func (s *LogicalSelectNode) generateExpr(c *Catalog, inputDesc *TupleDesc, tableMap map[string]*PlanNode) (Expr, string, error) {
+	DebugParser("in generate expr expr type is %v\n", s.exprType)
 	switch s.exprType {
 	case ExprAggr:
 		fallthrough
@@ -1037,6 +1050,7 @@ func makePhysicalPlan(c *Catalog, plan *LogicalPlan) (*OperatorCard, error) {
 			return nil, err
 		}
 
+		DebugParser("in makePhysical plan right is %v\n", right.String())
 		rTabName, rFieldName, err := right.getTableField(c, plan.subqueries, plan.tables)
 		if err != nil {
 			return nil, err
@@ -1063,6 +1077,8 @@ func makePhysicalPlan(c *Catalog, plan *LogicalPlan) (*OperatorCard, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		DebugParser("uhh %v GAP %v\n", node2.desc, c)
 		rightExpr, _, err := right.generateExpr(c, node2.desc, tableMap)
 		if err != nil {
 			return nil, err
@@ -1072,6 +1088,7 @@ func makePhysicalPlan(c *Catalog, plan *LogicalPlan) (*OperatorCard, error) {
 		if err != nil {
 			return nil, err
 		}
+		DebugParser("in makePhysicalPlan newOp is %v LEFT: %v RIGHT: %v\n", newOp.Descriptor(), newOp.leftField.GetExprType().Fname, newOp.rightField.GetExprType().Fname)
 
 		newNode := &PlanNode{NewOperatorCard(newOp, EstimateJoinCardinality(node1.op.Cardinality, node2.op.Cardinality)), newOp.Descriptor()}
 		for key, node := range tableMap {

@@ -70,17 +70,23 @@ func (f *FuncExpr) GetExprType() FieldType {
 	fType, exists := funcs[f.op]
 	//todo return err
 	if !exists {
-		return FieldType{f.op, "", IntType}
+		_, exists := overloadedFuncs[f.op]
+		if !exists {
+			return FieldType{f.op, "", IntType}
+		}
 	}
+	outType := fType.outType
 	ft := FieldType{f.op, "", IntType}
 	for _, fe := range f.args {
 		fieldExpr, ok := (*fe).(*FieldExpr)
 		if ok {
 			ft = fieldExpr.GetExprType()
 		}
+		if (*fe).GetExprType().Ftype == FloatType {
+			outType = FloatType
+		}
 	}
-	return FieldType{ft.Fname, ft.TableQualifier, fType.outType}
-
+	return FieldType{ft.Fname, ft.TableQualifier, outType}
 }
 
 type FuncType struct {

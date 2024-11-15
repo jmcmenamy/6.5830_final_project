@@ -81,15 +81,19 @@ func (joinOp *EqualityJoin) Iterator(tid TransactionID) (func() (*Tuple, error),
 	case FloatType:
 		floatValue = true
 	}
+	DebugJoin("left intValue is %v and stringValue is %v floatValue is %v left %v right %v\n", intValue, stringValue, floatValue, joinOp.leftField.GetExprType(), joinOp.rightField.GetExprType())
 
 	switch joinOp.rightField.GetExprType().Ftype {
 	case StringType:
 		stringValue = true
 	case IntType:
+		DebugJoin("got an int type? %v\n", joinOp.rightField.GetExprType())
 		intValue = true
 	case FloatType:
 		floatValue = true
 	}
+
+	DebugJoin("right intValue is %v and stringValue is %v floatValue is %v left %v right %v\n", intValue, stringValue, floatValue, joinOp.leftField.GetExprType(), joinOp.rightField.GetExprType())
 
 	// make sure we don't have type mismatch
 	if (intValue && stringValue) || (stringValue && intValue) ||
