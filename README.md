@@ -15,4 +15,4 @@
 1. navigate to `go-db-2024` directory
 2. run `go run main.go`
 3. run `\i ../tpch_raw_data/catalog.txt`
-4. You should see lots of output of reading rows from all the tbl files in the tpch_raw_data directory, then it should eventually finish loading
+4. This will by default only load some of the data, jumping to random offsets in the file on each query. The description in main.go describes how to change the arguments to change the behavior, but `\i ../tpch_raw_data/catalog.txt All` will load all the data

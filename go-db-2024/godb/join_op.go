@@ -93,7 +93,6 @@ func (joinOp *EqualityJoin) Iterator(tid TransactionID) (func() (*Tuple, error),
 
 	// make sure we don't have type mismatch
 	if (intValue && stringValue) || (stringValue && intValue) ||
-		(intValue && floatValue) || (floatValue && intValue) ||
 		(floatValue && stringValue) || (stringValue && floatValue) {
 		return nil, GoDBError{TypeMismatchError, fmt.Sprintf("intValue is %v and stringValue is %v floatValue is %v left %v right %v", intValue, stringValue, floatValue, joinOp.leftField.GetExprType(), joinOp.rightField.GetExprType())}
 	}
@@ -177,7 +176,7 @@ func (joinOp *EqualityJoin) Iterator(tid TransactionID) (func() (*Tuple, error),
 
 							leftBufferInt[leftIntVal.Value] = append(leftBufferInt[leftIntVal.Value], tup)
 						case FloatField:
-							return nil, GoDBError{TypeMismatchError, "Should never get here 1"}
+							return nil, GoDBError{TypeMismatchError, fmt.Sprintf("Should never get here 1: intvalue: %v, floatValue: %v, stringValue: %v", intValue, floatValue, stringValue)}
 						case StringField:
 							return nil, GoDBError{TypeMismatchError, "Should never get here 2"}
 						}

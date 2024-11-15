@@ -24,7 +24,7 @@ Available shell commands:
 	\a : Toggle aligned vs csv output
     \o : Toggle query optimization
 	\l table path/to/file [sep] [hasHeader]: Append csv file to end of table.  Default to sep = ',', hasHeader = 'true'
-	\i path/to/file [extension] [sep] [hasHeader] [mode]: Change the current database to a specified catalog file, and load from csv-like files in same directory as catalog file, with given separator Default to mode = 'All' (Options 'All', 'Some', 'Diagnostic'), extension = 'tbl', sep = '|', hasHeader = 'true'
+	\i path/to/file [extension] [sep] [hasHeader] [mode]: Change the current database to a specified catalog file, and load from csv-like files in same directory as catalog file, with given separator Default to mode = 'Some' (Options 'All', 'Some', 'Diagnostic'), extension = 'tbl', sep = '|', hasHeader = 'true'
 		- mode 'All' loads all the data from the csv
 		- mode 'Some' loads only some of the data from the csv
 		- mode 'Diagnostic' uses both strategies for each query, displaying results for each mode

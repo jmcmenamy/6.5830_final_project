@@ -3,6 +3,7 @@ package godb
 import (
 	"fmt"
 	"math/rand"
+	"reflect"
 	"time"
 )
 
@@ -11,6 +12,18 @@ import (
 //expressions.  We have provided the expression methods for you;  you will need
 //use the [EvalExpr] method  in your operator implementations to get fields and
 //other values from tuples.
+
+var floatType = reflect.TypeOf(float64(0))
+
+func getFloat(unk any) (float64, error) {
+	v := reflect.ValueOf(unk)
+	v = reflect.Indirect(v)
+	if !v.Type().ConvertibleTo(floatType) {
+		return 0, fmt.Errorf("cannot convert %v to float64", v.Type())
+	}
+	fv := v.Convert(floatType)
+	return fv.Float(), nil
+}
 
 type Expr interface {
 	EvalExpr(t *Tuple) (DBValue, error) //DBValue is either IntField or StringField
@@ -239,7 +252,15 @@ func minusFuncInts(args []any) any {
 }
 
 func minusFuncFloats(args []any) any {
-	return args[0].(float64) - args[1].(float64)
+	left, err := getFloat(args[0])
+	if err != nil {
+		fmt.Println(err)
+	}
+	right, err := getFloat(args[1])
+	if err != nil {
+		fmt.Println(err)
+	}
+	return left - right
 }
 
 func addFuncInts(args []any) any {

@@ -1448,12 +1448,12 @@ func Parse(c *Catalog, query string) (map[string]bool, QueryType, Operator, erro
 	switch stmt := stmt.(type) {
 	case *sqlparser.Select:
 		plan, err := parseStatement(c, stmt)
-		for _, table := range plan.tables {
-			tableNames[table.tableName] = true
-		}
 		if err != nil {
 			//fmt.Printf("Err: %s\n", err.Error())
 			return tableNames, UnknownQueryType, nil, err
+		}
+		for _, table := range plan.tables {
+			tableNames[table.tableName] = true
 		}
 		op, err := makePhysicalPlan(c, plan)
 		if err != nil {
