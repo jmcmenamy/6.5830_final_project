@@ -104,7 +104,8 @@ var BoolOpMap = map[string]BoolOp{
 func (i1 IntField) EvalPred(v2 DBValue, op BoolOp) bool {
 	i2, ok := v2.(IntField)
 	if !ok {
-		return false
+		i3, ok := v2.(FloatField)
+		return ok && i3.EvalPred(FloatField{Value: float64(i1.Value)}, op)
 	}
 	x1 := i1.Value
 	x2 := i2.Value
@@ -129,7 +130,8 @@ func (i1 IntField) EvalPred(v2 DBValue, op BoolOp) bool {
 func (i1 FloatField) EvalPred(v2 DBValue, op BoolOp) bool {
 	i2, ok := v2.(FloatField)
 	if !ok {
-		return false
+		i3, ok := v2.(IntField)
+		return ok && i1.EvalPred(FloatField{Value: float64(i3.Value)}, op)
 	}
 	x1 := i1.Value
 	x2 := i2.Value
