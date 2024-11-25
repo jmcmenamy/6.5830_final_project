@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var DEBUGHEAPFILE = false
@@ -32,6 +33,9 @@ type HeapFile struct {
 	desc               *TupleDesc
 	numSlots           int
 	fileName           string
+	metadataFileName   string
+	loadedEntireFile   bool
+	metadataFile       *os.File
 	tupleSize          int
 	numPages           int
 	file               *os.File
@@ -46,9 +50,17 @@ type HeapFile struct {
 // - td: the TupleDesc for the HeapFile.
 // - bp: the BufferPool that is used to store pages read from the HeapFile
 // May return an error if the file cannot be opened or created.
-func NewHeapFile(fromFile string, td *TupleDesc, bp *BufferPool) (*HeapFile, error) {
+func NewHeapFile(fromFile string, td *TupleDesc, bp *BufferPool, extraArgs ...string) (*HeapFile, error) {
 	// TODO: some code goes here
-	heapFile := &HeapFile{bufPool: bp, desc: td, fileName: fromFile, pagesWithFreeSpace: make(map[int]bool)}
+
+	// awkward because of backwards compatibility
+	metadataFileName := ""
+	if len(extraArgs) > 0 {
+		// fmt.Println("Extra args greater than 0\n")
+		metadataFileName = extraArgs[0]
+	}
+	heapFile := &HeapFile{bufPool: bp, desc: td, fileName: fromFile, pagesWithFreeSpace: make(map[int]bool), metadataFileName: metadataFileName}
+	// fmt.Printf("backing file is %v\n", metadataFileName)
 
 	// calculate the number of slots and tuple size
 	tupleSize := 0
@@ -72,7 +84,67 @@ func NewHeapFile(fromFile string, td *TupleDesc, bp *BufferPool) (*HeapFile, err
 	}
 	heapFile.file = file
 	heapFile.offSetsLoaded = make(map[int64]bool)
+
+	if metadataFileName != "" {
+		metadataFile, err := os.OpenFile(metadataFileName, os.O_RDWR|os.O_CREATE, 0644)
+		if err != nil {
+			return nil, err
+		}
+		heapFile.metadataFile = metadataFile
+		err = heapFile.ProcessMetadataFile(metadataFile)
+		if err != nil {
+			return nil, err
+		}
+
+	}
+
 	return heapFile, nil //replace me
+}
+
+func (f *HeapFile) ProcessMetadataFile(file *os.File) error {
+	// Define a buffer size for reading chunks (e.g., 4096 bytes = 4 KB)
+	chunkSize := 4096
+	buffer := make([]byte, chunkSize)
+	start := time.Now()
+
+	// Read the file in chunks
+	for {
+		// Read a chunk of data from the file
+		n, err := file.Read(buffer)
+		if err != nil && err.Error() != "EOF" {
+			fmt.Println("Error reading file:", err)
+			break
+		}
+		if n == 0 {
+			break // End of file
+		}
+
+		// Process the chunk of data
+		// processData(buffer[:n]) // Only pass the portion of the buffer that's been filled
+		text := string(buffer[:n])
+		numbers := strings.Split(text, ",")
+
+		// Process the numbers as needed
+		for _, num := range numbers {
+			if num == "" {
+				continue
+			}
+			convertedNum, err := strconv.ParseInt(num, 10, 64)
+			if err != nil {
+				return err
+			}
+			f.offSetsLoaded[convertedNum] = true
+			// fmt.Println(num) // Example: Print each number
+		}
+
+		// If we didn't reach a full chunk, we're at the end of the file
+		if err != nil && err.Error() == "EOF" {
+			break
+		}
+	}
+	duration := time.Since(start)
+	fmt.Printf("Parsed metadatafile in %v seconds, len(f.offsetsLoaded) = %v\n", duration, len(f.offSetsLoaded))
+	return nil
 }
 
 // Return the name of the backing file
@@ -171,6 +243,9 @@ func (f *HeapFile) loadLine(line string, sep string) error {
 // We provide the implementation of this method, but it won't work until
 // [HeapFile.insertTuple] and some other utility functions are implemented
 func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool) error {
+	if f.loadedEntireFile {
+		return nil
+	}
 	f.bufPool.CanFlushWhenFull = true
 	defer func() { f.bufPool.CanFlushWhenFull = false }()
 
@@ -182,6 +257,7 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 	if err != nil {
 		return err
 	}
+	newOffsetsLoaded := make(map[int64]bool)
 	estimatedLinesInFile := int(fileInfo.Size()) / f.tupleSize
 	if estimatedLinesInFile >= samplingThreshold {
 		reader := bufio.NewReader(file)
@@ -201,6 +277,7 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 				continue
 			}
 			f.offSetsLoaded[newOffset] = true
+			newOffsetsLoaded[newOffset] = true
 			numSampledLines++
 
 			line, err := reader.ReadString('\n')
@@ -231,13 +308,38 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 
 		for scanner.Scan() {
 			line := scanner.Text()
+			// Get the current file offset (position)
+			offset, err := file.Seek(0, io.SeekCurrent)
+			if err != nil {
+				fmt.Println("Error getting file offset:", err)
+				return err
+			}
+			if f.offSetsLoaded[offset] {
+				continue
+			}
+			f.offSetsLoaded[offset] = true
+			newOffsetsLoaded[offset] = true
 			f.loadLine(line, sep)
 		}
+		f.loadedEntireFile = true
 	}
 	bp := f.bufPool
 	// Force dirty pages to disk. CommitTransaction may not be implemented
 	// yet if this is called in lab 1 or 2.
 	bp.FlushAllPages()
+
+	newString := ""
+	for offset, _ := range newOffsetsLoaded {
+		// fmt.Printf("offset is %v, str is %v\n", offset, string(offset))
+		newString += fmt.Sprintf("%v,", offset)
+	}
+	if newString != "" && newString != "," {
+		n, err := f.metadataFile.WriteString(newString)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Wrote %v bytes to %v\n", n, f.metadataFileName)
+	}
 	return nil
 }
 

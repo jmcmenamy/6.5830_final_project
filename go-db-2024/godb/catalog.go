@@ -86,7 +86,7 @@ func ImportCatalogFromCSVs(
 	return nil
 }
 
-func (c *Catalog) parseCatalogFile() error {
+func (c *Catalog) parseCatalogFile(options ...bool) error {
 	f, err := os.Open(c.rootPath + "/" + c.filePath)
 	if err != nil {
 		return err
@@ -133,7 +133,7 @@ func (c *Catalog) parseCatalogFile() error {
 			fieldArray = append(fieldArray, fieldType)
 		}
 
-		_, err := c.addTable(tableName, TupleDesc{fieldArray})
+		_, err := c.addTable(tableName, TupleDesc{fieldArray}, options...)
 		if err != nil {
 			return err
 		}
@@ -145,9 +145,9 @@ func NewCatalog(catalogFile string, bp *BufferPool, rootPath string) *Catalog {
 	return &Catalog{make(map[string]*Table), make(map[string][]*Table), bp, rootPath, catalogFile}
 }
 
-func NewCatalogFromFile(catalogFile string, bp *BufferPool, rootPath string) (*Catalog, error) {
+func NewCatalogFromFile(catalogFile string, bp *BufferPool, rootPath string, options ...bool) (*Catalog, error) {
 	c := NewCatalog(catalogFile, bp, rootPath)
-	if err := c.parseCatalogFile(); err != nil {
+	if err := c.parseCatalogFile(options...); err != nil {
 		return nil, err
 	}
 	return c, nil
@@ -156,13 +156,20 @@ func NewCatalogFromFile(catalogFile string, bp *BufferPool, rootPath string) (*C
 // Add a new table to the catalog.
 //
 // Returns an error if the table already exists.
-func (c *Catalog) addTable(named string, desc TupleDesc) (DBFile, error) {
+func (c *Catalog) addTable(named string, desc TupleDesc, options ...bool) (DBFile, error) {
 	f, err := c.GetTable(named)
 	if err == nil {
 		return f, GoDBError{DuplicateTableError, fmt.Sprintf("a table named '%s' already exists", named)}
 	}
 
-	hf, err := NewHeapFile(c.tableNameToFile(named), &desc, c.bufferPool)
+	// fmt.Println("calling heap file with %v\n", c.TableNameToMetadataFile(named))
+	// hf, err := NewHeapFile(c.tableNameToFile(t.name), t.desc.copy(), c.bufferPool, c.tableNameToBackingFile(t.name))
+	var hf *HeapFile
+	if len(options) > 0 && !options[0] {
+		hf, err = NewHeapFile(c.tableNameToFile(named), &desc, c.bufferPool)
+	} else {
+		hf, err = NewHeapFile(c.tableNameToFile(named), &desc, c.bufferPool, c.TableNameToMetadataFile(named))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -187,6 +194,10 @@ func (c *Catalog) ComputeTableStats() error {
 
 func (c *Catalog) tableNameToFile(tableName string) string {
 	return c.rootPath + "/" + tableName + ".dat"
+}
+
+func (c *Catalog) TableNameToMetadataFile(tableName string) string {
+	return c.rootPath + "/" + tableName + "Info.txt"
 }
 
 func (c *Catalog) GetTableInfo(named string) (*Table, error) {

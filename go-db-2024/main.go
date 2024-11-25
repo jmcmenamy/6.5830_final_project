@@ -24,7 +24,7 @@ Available shell commands:
 	\a : Toggle aligned vs csv output
     \o : Toggle query optimization
 	\l table path/to/file [sep] [hasHeader]: Append csv file to end of table.  Default to sep = ',', hasHeader = 'true'
-	\i path/to/file [extension] [sep] [hasHeader] [mode]: Change the current database to a specified catalog file, and load from csv-like files in same directory as catalog file, with given separator Default to mode = 'Some' (Options 'All', 'Some', 'Diagnostic'), extension = 'tbl', sep = '|', hasHeader = 'true'
+	\i path/to/file [extension] [useMetaDataFile] [sep] [hasHeader] [mode]: Change the current database to a specified catalog file, and load from csv-like files in same directory as catalog file, with given separator Default to mode = 'Some' (Options 'All', 'Some', 'Diagnostic'), extension = 'tbl', sep = '|', hasHeader = 'true'
 		- mode 'All' loads all the data from the csv
 		- mode 'Some' loads only some of the data from the csv
 		- mode 'Diagnostic' uses both strategies for each query, displaying results for each mode
@@ -60,6 +60,7 @@ func main() {
 	catName := "catalog.txt"
 	catPath := "godb"
 	mode := "Some"
+	useMetaDataFile := true
 	extension := "tbl"
 	sep := "|"
 	hasHeader := false
@@ -191,21 +192,25 @@ func main() {
 				splits := strings.Split(text, " ")
 				path := splits[1]
 				if len(splits) > 2 {
-					mode = splits[2]
+					useMetaDataFile = splits[2] != "false"
 				}
 				if len(splits) > 3 {
-					extension = splits[3]
+					mode = splits[3]
 				}
 				if len(splits) > 4 {
-					sep = splits[4]
+					extension = splits[4]
 				}
 				if len(splits) > 5 {
-					hasHeader = splits[5] != "false"
+					sep = splits[5]
+				}
+				if len(splits) > 6 {
+					hasHeader = splits[6] != "false"
 				}
 				pathAr := strings.Split(path, "/")
 				catName = pathAr[len(pathAr)-1]
 				catPath = strings.Join(pathAr[0:len(pathAr)-1], "/")
-				c, err = godb.NewCatalogFromFile(catName, bp, catPath)
+				// fmt.Printf("catName is %v, catPath is %v\n", catName, catPath)
+				c, err = godb.NewCatalogFromFile(catName, bp, catPath, useMetaDataFile)
 				if err != nil {
 					fmt.Printf("failed load catalog, %s\n", err.Error())
 					continue
