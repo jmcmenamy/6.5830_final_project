@@ -175,7 +175,7 @@ func main() {
 					fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
 					continue
 				}
-				err = heapFile.LoadFromCSV(f, hasHeader, sep, false)
+				err = heapFile.LoadFromCSV(f, hasHeader, sep, false, "")
 				if err != nil {
 					fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
 					continue
@@ -237,7 +237,8 @@ func main() {
 						fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
 						continue
 					}
-					err = heapFile.LoadFromCSV(f, hasHeader, sep, false)
+					statFilename := catPath + "/" + tableName + "Stat.txt"
+					err = heapFile.LoadFromCSV(f, hasHeader, sep, false, statFilename)
 					if err != nil {
 						fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
 						continue
