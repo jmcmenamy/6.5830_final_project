@@ -364,6 +364,34 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 	return nil
 }
 
+func computeStats(fieldValues map[string][]float64) map[string]map[string]float64 {
+	result := make(map[string]map[string]float64)
+
+	for key, values := range fieldValues {
+		numValues := float64(len(values))
+
+		// Compute the average
+		sum := 0.0
+		for _, v := range values {
+			sum += v
+		}
+		average := sum / numValues
+
+		// Compute the standard deviation
+		varianceSum := 0.0
+		for _, v := range values {
+			varianceSum += (v - average) * (v - average)
+		}
+		standardDeviation := math.Sqrt(varianceSum / numValues)
+
+		result[key] = map[string]float64{
+			"average":           average,
+			"standardDeviation": standardDeviation,
+		}
+	}
+	return result
+}
+
 func (f *HeapFile) StatFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool, statFilename string) error {
 	f.bufPool.CanFlushWhenFull = true
 	defer func() { f.bufPool.CanFlushWhenFull = false }()
@@ -492,14 +520,12 @@ func (f *HeapFile) StatAndLoadFromCSV(file *os.File, hasHeader bool, sep string,
 // Returns an error if the field cannot be opened or if a line is malformed
 // We provide the implementation of this method, but it won't work until
 // [HeapFile.insertTuple] and some other utility functions are implemented
-func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool, statFilename string) error {
+func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool) error {
 	f.bufPool.CanFlushWhenFull = true
 	defer func() { f.bufPool.CanFlushWhenFull = false }()
 	scanner := bufio.NewScanner(file)
 	cnt := 0
 	i := 0
-
-	fieldValues := map[string][]float64{}
 
 	for scanner.Scan() {
 		if i%100 == 0 {
@@ -533,8 +559,6 @@ func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 				}
 				intValue := int(floatVal)
 				newFields = append(newFields, IntField{int64(intValue)})
-				fieldName := desc.Fields[fno].Fname
-				fieldValues[fieldName] = append(fieldValues[fieldName], floatVal)
 			case FloatType:
 				field = strings.TrimSpace(field)
 				floatVal, err := strconv.ParseFloat(field, 64)
@@ -543,8 +567,6 @@ func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 				}
 				floatValue := float64(floatVal)
 				newFields = append(newFields, FloatField{floatValue})
-				fieldName := desc.Fields[fno].Fname
-				fieldValues[fieldName] = append(fieldValues[fieldName], floatVal)
 			case StringType:
 				if len(field) > StringLength {
 					field = field[0:StringLength]
@@ -561,60 +583,11 @@ func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 		i += 1
 	}
 
-	if statFilename != "" {
-		stats := computeStats(fieldValues)
-
-		file, err := os.OpenFile(statFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		if err != nil {
-			return fmt.Errorf("failed to open or create file: %w", err)
-		}
-		defer file.Close()
-
-		for key, stat := range stats {
-			line := fmt.Sprintf("Field name: %s, Average: %.2f, Standard Deviation: %.2f\n",
-				key, stat["average"], stat["standardDeviation"])
-			_, err := file.WriteString(line)
-			if err != nil {
-				return fmt.Errorf("failed to write to file: %w", err)
-			}
-		}
-
-		return nil
-	}
-
 	bp := f.bufPool
 	// Force dirty pages to disk. CommitTransaction may not be implemented
 	// yet if this is called in lab 1 or 2.
 	bp.FlushAllPages()
 	return nil
-}
-
-func computeStats(fieldValues map[string][]float64) map[string]map[string]float64 {
-	result := make(map[string]map[string]float64)
-
-	for key, values := range fieldValues {
-		numValues := float64(len(values))
-
-		// Compute the average
-		sum := 0.0
-		for _, v := range values {
-			sum += v
-		}
-		average := sum / numValues
-
-		// Compute the standard deviation
-		varianceSum := 0.0
-		for _, v := range values {
-			varianceSum += (v - average) * (v - average)
-		}
-		standardDeviation := math.Sqrt(varianceSum / numValues)
-
-		result[key] = map[string]float64{
-			"average":           average,
-			"standardDeviation": standardDeviation,
-		}
-	}
-	return result
 }
 
 // Read the specified page number from the HeapFile on disk. This method is

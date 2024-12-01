@@ -36,7 +36,7 @@ func computeFieldSum(bp *BufferPool, fileName string, td TupleDesc, sumField str
 		return 0, err
 	}
 
-	heapFile.LoadFromCSV(file, true, ",", false, "")
+	heapFile.LoadFromCSV(file, true, ",", false)
 
 	iter, err := heapFile.Iterator(0)
 	if err != nil {

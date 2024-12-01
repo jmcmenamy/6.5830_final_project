@@ -78,7 +78,7 @@ func ImportCatalogFromCSVs(
 		if err != nil {
 			return err
 		}
-		err = hf.LoadFromCSV(f, false, separator, true, "")
+		err = hf.LoadFromCSV(f, false, separator, true)
 		if err != nil {
 			return err
 		}
