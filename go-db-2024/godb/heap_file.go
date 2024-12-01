@@ -188,6 +188,9 @@ func getSampledOffsets(offsets []int64, sampleRate float32) []int64 {
 }
 
 // Convert a line read from a CSV file to a tuple and insert into heap file
+// If fieldStats is nil, do not select for non-outlier rows during sampling.
+// Otherwise, return error if line contains an outlier numerical field based on
+// mean, standard deviation.
 func (f *HeapFile) loadLine(line string, sep string, fieldStats map[string][2]float64) error {
 	fields := strings.Split(line, sep)
 	numFields := len(fields)
@@ -257,6 +260,9 @@ func (f *HeapFile) loadLine(line string, sep string, fieldStats map[string][2]fl
 // - hasHeader:  whether or not the CSV file has a header
 // - sep: the character to use to separate fields
 // - skipLastField: if true, the final field is skipped (some TPC datasets include a trailing separator on each line)
+// - fieldStats: if nil, do not select for non-outlier rows during sampling.
+// otherwise, strictly load into the database rows with numerical fields all
+// within two standard deviations of the mean for the corresponding column.
 // Returns an error if the field cannot be opened or if a line is malformed
 // We provide the implementation of this method, but it won't work until
 // [HeapFile.insertTuple] and some other utility functions are implemented
@@ -364,34 +370,32 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 	return nil
 }
 
-func computeStats(fieldValues map[string][]float64) map[string]map[string]float64 {
-	result := make(map[string]map[string]float64)
+func computeStats(fieldValues map[string][]float64) map[string][2]float64 {
+	result := make(map[string][2]float64)
 
 	for key, values := range fieldValues {
 		numValues := float64(len(values))
 
-		// Compute the average
+		// Compute the mean
 		sum := 0.0
 		for _, v := range values {
 			sum += v
 		}
-		average := sum / numValues
+		mean := sum / numValues
 
 		// Compute the standard deviation
 		varianceSum := 0.0
 		for _, v := range values {
-			varianceSum += (v - average) * (v - average)
+			varianceSum += (v - mean) * (v - mean)
 		}
-		standardDeviation := math.Sqrt(varianceSum / numValues)
+		stddev := math.Sqrt(varianceSum / numValues)
 
-		result[key] = map[string]float64{
-			"average":           average,
-			"standardDeviation": standardDeviation,
-		}
+		result[key] = [2]float64{mean, stddev}
 	}
 	return result
 }
 
+// Read CSV file and write to file statFilename per-column mean, stddev.
 func (f *HeapFile) StatFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool, statFilename string) error {
 	f.bufPool.CanFlushWhenFull = true
 	defer func() { f.bufPool.CanFlushWhenFull = false }()
@@ -440,7 +444,7 @@ func (f *HeapFile) StatFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 		}
 	}
 
-	stats := computeStats(fieldValues)
+	fieldStats := computeStats(fieldValues)
 
 	file, err := os.OpenFile(statFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
@@ -448,9 +452,9 @@ func (f *HeapFile) StatFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 	}
 	defer file.Close()
 
-	for key, stat := range stats {
+	for field, stats := range fieldStats {
 		line := fmt.Sprintf("%s,%.2f,%.2f\n",
-			key, stat["average"], stat["standardDeviation"])
+			field, stats[0], stats[1])
 		_, err := file.WriteString(line)
 		if err != nil {
 			return fmt.Errorf("failed to write to file: %w", err)
@@ -459,6 +463,8 @@ func (f *HeapFile) StatFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 	return nil
 }
 
+// Return a map mapping field names to [mean, stddev] from a CSV file containing
+// comma-delimited stats.
 func LoadStat(statFilename string) (map[string][2]float64, error) {
 	file, err := os.Open(statFilename)
 	if err != nil {
@@ -494,6 +500,13 @@ func LoadStat(statFilename string) (map[string][2]float64, error) {
 	return fieldStats, nil
 }
 
+// Multi-pass random sampling.
+//
+// In the first pass, compute and write to a file per-column mean, standard
+// deviation without loading any data into the database. In the second pass, for
+// each row in the CSV file, determine whether all numerical fields are within
+// two standard deviations. Repeatedly randomly sample until a sufficient subset
+// of (non-outlier) data is loaded into the database.
 func (f *HeapFile) StatAndLoadFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool, statFilename string) error {
 	// Get stats in initial read-only pass through CSV file
 	err := f.StatFromCSV(file, hasHeader, sep, skipLastField, statFilename)

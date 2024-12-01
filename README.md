@@ -15,4 +15,12 @@
 1. navigate to `go-db-2024` directory
 2. run `go run main.go`
 3. run `\i ../tpch_raw_data/catalog.txt`
-4. This will by default only load some of the data, jumping to random offsets in the file on each query. The description in main.go describes how to change the arguments to change the behavior, but `\i ../tpch_raw_data/catalog.txt false All` will load all the data, and `\i ../tpch_raw_data/catalog.txt false` will read some of the data each time, but not use a metadata file to keep track of offsets that have been read
+4. This will by default only load some of the data, jumping to random offsets in
+the file on each query. The description in main.go describes how to change the
+arguments to change the behavior.
+* `\i ../tpch_raw_data/catalog.txt false All` will load all the data
+* `\i ../tpch_raw_data/catalog.txt false Stat` will load a randomly sampled
+subset of the data, while ensuring all loaded rows containing non-outlier values
+based on precomputed per-column statistics.
+* `\i ../tpch_raw_data/catalog.txt false` will read some of the data each time,
+but not use a metadata file to keep track of offsets that have been read
