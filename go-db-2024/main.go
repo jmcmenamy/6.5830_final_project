@@ -224,6 +224,36 @@ func main() {
 					continue
 				}
 
+				if mode == "Stat" {
+					// In first (read) pass, compute mean, std dev for full
+					// dataset.
+					// In second (write) pass, insert to database tuples
+					// containing numerical fields all within two standard
+					// deviations from the mean.
+					for _, tableName := range c.TableNames() {
+						fmt.Printf("Processing table: %v\n", tableName)
+						hf, err := c.GetTable(tableName)
+						if err != nil {
+							fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
+							continue
+						}
+						heapFile := hf.(*godb.HeapFile)
+						f, err := os.Open(fmt.Sprintf("%v/%v.%v", catPath, tableName, extension))
+						if err != nil {
+							fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
+							continue
+						}
+						statFilename := catPath + "/" + tableName + "Stat.txt"
+						err = heapFile.StatAndLoadFromCSV(f, hasHeader, sep, false, statFilename)
+						if err != nil {
+							fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
+							continue
+						}
+					}
+
+					continue
+				}
+
 				for _, tableName := range c.TableNames() {
 					//todo -- following code assumes data is in heap files
 					hf, err := c.GetTable(tableName)
@@ -306,7 +336,7 @@ func main() {
 					fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
 					continue
 				}
-				err = heapFile.LoadSomeFromCSV(f, hasHeader, sep, false)
+				err = heapFile.LoadSomeFromCSV(f, hasHeader, sep, false, nil)
 				if err != nil {
 					fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
 					continue

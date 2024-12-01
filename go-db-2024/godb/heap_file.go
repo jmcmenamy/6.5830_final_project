@@ -3,6 +3,7 @@ package godb
 import (
 	"bufio"
 	"bytes"
+	"encoding/csv"
 	"fmt"
 	"io"
 	"math"
@@ -187,7 +188,7 @@ func getSampledOffsets(offsets []int64, sampleRate float32) []int64 {
 }
 
 // Convert a line read from a CSV file to a tuple and insert into heap file
-func (f *HeapFile) loadLine(line string, sep string) error {
+func (f *HeapFile) loadLine(line string, sep string, fieldStats map[string][2]float64) error {
 	fields := strings.Split(line, sep)
 	numFields := len(fields)
 
@@ -210,6 +211,14 @@ func (f *HeapFile) loadLine(line string, sep string) error {
 			}
 			intValue := int(floatVal)
 			newFields = append(newFields, IntField{int64(intValue)})
+			if fieldStats != nil {
+				fieldName := desc.Fields[fno].Fname
+				stats := fieldStats[fieldName]
+				mean, stddev := stats[0], stats[1]
+				if floatVal > mean+(2*stddev) || floatVal < mean-(2*stddev) {
+					return fmt.Errorf("outlier value %v for field %v (%v, %v). not inserted into database", floatVal, fieldName, mean, stddev)
+				}
+			}
 		case FloatType:
 			field = strings.TrimSpace(field)
 			floatVal, err := strconv.ParseFloat(field, 64)
@@ -218,6 +227,14 @@ func (f *HeapFile) loadLine(line string, sep string) error {
 			}
 			floatValue := float64(floatVal)
 			newFields = append(newFields, FloatField{floatValue})
+			if fieldStats != nil {
+				fieldName := desc.Fields[fno].Fname
+				stats := fieldStats[fieldName]
+				mean, stddev := stats[0], stats[1]
+				if floatVal > mean+(2*stddev) || floatVal < mean-(2*stddev) {
+					return fmt.Errorf("outlier value %v for field %v (%v, %v). not inserted into database", floatVal, fieldName, mean, stddev)
+				}
+			}
 		case StringType:
 			if len(field) > StringLength {
 				field = field[0:StringLength]
@@ -243,7 +260,7 @@ func (f *HeapFile) loadLine(line string, sep string) error {
 // Returns an error if the field cannot be opened or if a line is malformed
 // We provide the implementation of this method, but it won't work until
 // [HeapFile.insertTuple] and some other utility functions are implemented
-func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool) error {
+func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool, fieldStats map[string][2]float64) error {
 	if f.loadedEntireFile {
 		return nil
 	}
@@ -279,14 +296,17 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 			}
 			f.offSetsLoaded[newOffset] = true
 			newOffsetsLoaded[newOffset] = true
-			numSampledLines++
+			// numSampledLines++
 
 			line, err := reader.ReadString('\n')
 			if err != nil {
 				return fmt.Errorf("error reading line at byte offset %v", newOffset)
 			}
 
-			f.loadLine(line, sep)
+			err = f.loadLine(line, sep, fieldStats)
+			if err == nil {
+				numSampledLines++
+			}
 
 			reader.Reset(file)
 		}
@@ -320,7 +340,7 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 			}
 			f.offSetsLoaded[offset] = true
 			newOffsetsLoaded[offset] = true
-			f.loadLine(line, sep)
+			f.loadLine(line, sep, nil)
 		}
 		f.loadedEntireFile = true
 	}
@@ -341,6 +361,127 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 		}
 		fmt.Printf("Wrote %v bytes to %v\n", n, f.metadataFileName)
 	}
+	return nil
+}
+
+func (f *HeapFile) StatFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool, statFilename string) error {
+	f.bufPool.CanFlushWhenFull = true
+	defer func() { f.bufPool.CanFlushWhenFull = false }()
+	scanner := bufio.NewScanner(file)
+	cnt := 0
+
+	fieldValues := map[string][]float64{}
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		fields := strings.Split(line, sep)
+		if skipLastField {
+			fields = fields[0 : len(fields)-1]
+		}
+		numFields := len(fields)
+		cnt++
+		desc := f.Descriptor()
+		if desc == nil || desc.Fields == nil {
+			return GoDBError{MalformedDataError, "Descriptor was nil"}
+		}
+		if numFields != len(desc.Fields) {
+			return GoDBError{MalformedDataError, fmt.Sprintf("LoadFromCSV:  line %d (%s) does not have expected number of fields (expected %d, got %d)", cnt, line, len(f.Descriptor().Fields), numFields)}
+		}
+		if cnt == 1 && hasHeader {
+			continue
+		}
+		for fno, field := range fields {
+			switch f.Descriptor().Fields[fno].Ftype {
+			case IntType:
+				field = strings.TrimSpace(field)
+				floatVal, err := strconv.ParseFloat(field, 64)
+				if err != nil {
+					return GoDBError{TypeMismatchError, fmt.Sprintf("LoadFromCSV: couldn't convert value %s to int, tuple %d", field, cnt)}
+				}
+				fieldName := desc.Fields[fno].Fname
+				fieldValues[fieldName] = append(fieldValues[fieldName], floatVal)
+			case FloatType:
+				field = strings.TrimSpace(field)
+				floatVal, err := strconv.ParseFloat(field, 64)
+				if err != nil {
+					return GoDBError{TypeMismatchError, fmt.Sprintf("LoadFromCSV: couldn't convert value %s to int, tuple %d", field, cnt)}
+				}
+				fieldName := desc.Fields[fno].Fname
+				fieldValues[fieldName] = append(fieldValues[fieldName], floatVal)
+			}
+		}
+	}
+
+	stats := computeStats(fieldValues)
+
+	file, err := os.OpenFile(statFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open or create file: %w", err)
+	}
+	defer file.Close()
+
+	for key, stat := range stats {
+		line := fmt.Sprintf("%s,%.2f,%.2f\n",
+			key, stat["average"], stat["standardDeviation"])
+		_, err := file.WriteString(line)
+		if err != nil {
+			return fmt.Errorf("failed to write to file: %w", err)
+		}
+	}
+	return nil
+}
+
+func LoadStat(statFilename string) (map[string][2]float64, error) {
+	file, err := os.Open(statFilename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CSV: %v", err)
+	}
+
+	fieldStats := make(map[string][2]float64)
+	for _, record := range records {
+		if len(record) != 3 {
+			return nil, fmt.Errorf("invalid record format: %v", record)
+		}
+
+		mean, err := strconv.ParseFloat(record[1], 64)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse mean for key %s: %v", record[0], err)
+		}
+
+		stddev, err := strconv.ParseFloat(record[2], 64)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse stddev for key %s: %v", record[0], err)
+		}
+
+		fieldStats[record[0]] = [2]float64{mean, stddev}
+	}
+
+	return fieldStats, nil
+}
+
+func (f *HeapFile) StatAndLoadFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool, statFilename string) error {
+	// Get stats in initial read-only pass through CSV file
+	err := f.StatFromCSV(file, hasHeader, sep, skipLastField, statFilename)
+	if err != nil {
+		return fmt.Errorf("failed to compute stats from file %v", file)
+	}
+
+	// Read stats from CSV file and load into map
+	fieldStats, err := LoadStat(statFilename)
+	if err != nil {
+		return fmt.Errorf("failed to read stats from file %v", statFilename)
+	}
+
+	// Randomly sample rows (with non-outlier values) to insert into database
+	_ = f.LoadSomeFromCSV(file, hasHeader, sep, skipLastField, fieldStats)
+
 	return nil
 }
 
