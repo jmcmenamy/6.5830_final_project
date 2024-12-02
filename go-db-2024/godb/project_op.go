@@ -31,6 +31,10 @@ func NewProjectOp(selectFields []Expr, outputNames []string, distinct bool, chil
 	return &Project{selectFields, outputNames, child, distinct}, nil
 }
 
+func (p *Project) Statistics() map[string]map[string]float64 {
+	return p.child.Statistics()
+}
+
 // Return a TupleDescriptor for this projection. The returned descriptor should
 // contain fields for each field in the constructor selectFields list with
 // outputNames as specified in the constructor.

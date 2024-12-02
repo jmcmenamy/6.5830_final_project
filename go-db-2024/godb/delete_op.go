@@ -24,6 +24,10 @@ func NewDeleteOp(deleteFile DBFile, child Operator) *DeleteOp {
 	return &DeleteOp{deleteFile, child}
 }
 
+func (dop *DeleteOp) Statistics() map[string]map[string]float64 {
+	return dop.child.Statistics()
+}
+
 // The delete TupleDesc is a one column descriptor with an integer field named
 // "count".
 func (i *DeleteOp) Descriptor() *TupleDesc {

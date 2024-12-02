@@ -869,6 +869,10 @@ type OperatorCard struct {
 	Op          Operator
 }
 
+func (o *OperatorCard) Statistics() map[string]map[string]float64 {
+	return o.Op.Statistics()
+}
+
 func (o *OperatorCard) Descriptor() *TupleDesc {
 	return o.Op.Descriptor()
 }

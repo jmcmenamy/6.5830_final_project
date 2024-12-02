@@ -24,6 +24,10 @@ func NewInsertOp(insertFile DBFile, child Operator) *InsertOp {
 	return &InsertOp{insertFile, child}
 }
 
+func (i *InsertOp) Statistics() map[string]map[string]float64 {
+	return i.child.Statistics()
+}
+
 // The insert TupleDesc is a one column descriptor with an integer field named "count"
 func (i *InsertOp) Descriptor() *TupleDesc {
 	// TODO: some code goes here

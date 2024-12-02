@@ -18,6 +18,10 @@ func (mp *MemPage) isDirty() bool {
 func (mp *MemPage) setDirty(tid TransactionID, dirty bool) {
 }
 
+func (mp *MemFile) Statistics() map[string]map[string]float64 {
+	return nil
+}
+
 func (mp *MemPage) getFile() DBFile {
 	return mp.file
 }

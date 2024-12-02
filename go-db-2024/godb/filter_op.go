@@ -23,6 +23,10 @@ func NewFilter(constExpr Expr, op BoolOp, field Expr, child Operator) (*Filter, 
 	return &Filter{op, field, constExpr, child}, nil
 }
 
+func (f *Filter) Statistics() map[string]map[string]float64 {
+	return f.child.Statistics()
+}
+
 // Return a TupleDescriptor for this filter op.
 func (f *Filter) Descriptor() *TupleDesc {
 	// TODO: some code goes here

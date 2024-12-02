@@ -44,6 +44,10 @@ func NewAggregator(emptyAggState []AggState, child Operator) *Aggregator {
 	return &Aggregator{nil, emptyAggState, child}
 }
 
+func (a *Aggregator) Statistics() map[string]map[string]float64 {
+	return a.child.Statistics()
+}
+
 // Return a TupleDescriptor for this aggregation.
 //
 // If the aggregator has no group-by, the returned descriptor should contain the
@@ -146,7 +150,7 @@ func (a *Aggregator) Iterator(tid TransactionID) (func() (*Tuple, error), error)
 			if a.groupByFields == nil {
 				var tup *Tuple
 				for i := 0; i < len(a.newAggState); i++ {
-					newTup := (*aggState[DefaultGroup])[i].Finalize()
+					newTup := (*aggState[DefaultGroup])[i].Finalize(a.child.Statistics())
 					tup = joinTuples(tup, newTup)
 				}
 				finalizedIter = func() (*Tuple, error) { return nil, nil }
@@ -228,7 +232,7 @@ func getFinalizedTuplesIterator(a *Aggregator, groupByList []*Tuple, aggState ma
 			return nil, GoDBError{TypeMismatchError, fmt.Sprintf("Should have aggState list for tuple %v", *tup)}
 		}
 		for _, aggState := range *aggStateList {
-			aggTup := aggState.Finalize()
+			aggTup := aggState.Finalize(a.child.Statistics())
 			tup = joinTuples(tup, aggTup)
 		}
 		i++

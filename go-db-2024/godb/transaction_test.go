@@ -232,6 +232,10 @@ type Singleton struct {
 	ran bool
 }
 
+func (i *Singleton) Statistics() map[string]map[string]float64 {
+	return nil
+}
+
 func (i *Singleton) Descriptor() *TupleDesc {
 	return &i.tup.Desc
 }

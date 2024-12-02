@@ -27,7 +27,7 @@ type AggState interface {
 	AddTuple(*Tuple)
 
 	// Returns the final result of the aggregation as a tuple.
-	Finalize() *Tuple
+	Finalize(map[string]map[string]float64) *Tuple
 
 	// Gets the tuple description of the tuple that Finalize() returns.
 	GetTupleDesc() *TupleDesc
@@ -57,9 +57,17 @@ func (a *CountAggState) AddTuple(t *Tuple) {
 	a.count++
 }
 
-func (a *CountAggState) Finalize() *Tuple {
+func (a *CountAggState) Finalize(stats map[string]map[string]float64) *Tuple {
 	td := a.GetTupleDesc()
 	f := IntField{int64(a.count)}
+	if stats != nil {
+		fmt.Printf("Using stats!\n")
+		estimatedLines := stats[ESTIMATEDLINES][MEAN]
+		linesRead := stats[N][MEAN]
+		if linesRead != 0 {
+			f.Value = int64(float64(f.Value) * estimatedLines / linesRead)
+		}
+	}
 	fs := []DBValue{f}
 	t := Tuple{*td, fs, nil}
 	return &t
@@ -119,14 +127,38 @@ func (a *SumAggState) GetTupleDesc() *TupleDesc {
 	return &TupleDesc{[]FieldType{{a.alias, "", a.expr.GetExprType().Ftype}}}
 }
 
-func (a *SumAggState) Finalize() *Tuple {
+func (a *SumAggState) Finalize(stats map[string]map[string]float64) *Tuple {
 	// TODO: some code goes here
 	var f DBValue
 	switch a.expr.GetExprType().Ftype {
 	case IntType:
 		f = IntField{a.sumInt}
+		if stats != nil {
+			fieldName := a.expr.GetExprType().Fname
+			fieldStats := stats[fieldName]
+			if fieldStats != nil {
+				fmt.Printf("Using stats!\n")
+				estimatedLines := stats[ESTIMATEDLINES][MEAN]
+				linesRead := stats[N][MEAN]
+				if linesRead != 0 {
+					f = IntField{int64(float64(a.sumInt) * estimatedLines / linesRead)}
+				}
+			}
+		}
 	case FloatType:
 		f = FloatField{a.sumFloat}
+		if stats != nil {
+			fieldName := a.expr.GetExprType().Fname
+			fieldStats := stats[fieldName]
+			if fieldStats != nil {
+				fmt.Printf("Using stats!\n")
+				estimatedLines := stats[ESTIMATEDLINES][MEAN]
+				linesRead := stats[N][MEAN]
+				if linesRead != 0 {
+					f = FloatField{a.sumFloat * estimatedLines / linesRead}
+				}
+			}
+		}
 	case StringType:
 		f = StringField{a.sumStr}
 	}
@@ -186,7 +218,7 @@ func (a *AvgAggState) GetTupleDesc() *TupleDesc {
 	return &TupleDesc{[]FieldType{{a.alias, "", a.expr.GetExprType().Ftype}}}
 }
 
-func (a *AvgAggState) Finalize() *Tuple {
+func (a *AvgAggState) Finalize(stats map[string]map[string]float64) *Tuple {
 	// TODO: some code goes here
 	var f DBValue
 	switch a.expr.GetExprType().Ftype {
@@ -264,14 +296,44 @@ func (a *MaxAggState) GetTupleDesc() *TupleDesc {
 	return &TupleDesc{[]FieldType{{a.alias, "", a.expr.GetExprType().Ftype}}}
 }
 
-func (a *MaxAggState) Finalize() *Tuple {
+func (a *MaxAggState) Finalize(stats map[string]map[string]float64) *Tuple {
 	// TODO: some code goes here
 	var f DBValue
 	switch a.expr.GetExprType().Ftype {
 	case IntType:
 		f = IntField{a.maxInt}
+		if stats != nil {
+			fieldName := a.expr.GetExprType().Fname
+			fieldStats := stats[fieldName]
+			if fieldStats != nil {
+				fmt.Printf("Using stats!\n")
+				if fieldStats[STDDEV] == -1 {
+					// https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
+					fieldStats[STDDEV] = fieldStats[SUMSQUARESDIFF] / stats[N][MEAN]
+				}
+				estMax := int64(fieldStats[MEAN] + 3*fieldStats[STDDEV])
+				if estMax > a.maxInt {
+					f = IntField{estMax}
+				}
+			}
+		}
 	case FloatType:
 		f = FloatField{a.maxFloat}
+		if stats != nil {
+			fieldName := a.expr.GetExprType().Fname
+			fieldStats := stats[fieldName]
+			if fieldStats != nil {
+				fmt.Printf("Using stats!\n")
+				if fieldStats[STDDEV] == -1 {
+					// https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
+					fieldStats[STDDEV] = fieldStats[SUMSQUARESDIFF] / stats[N][MEAN]
+				}
+				estMax := fieldStats[MEAN] + 3*fieldStats[STDDEV]
+				if estMax > a.maxFloat {
+					f = FloatField{estMax}
+				}
+			}
+		}
 	case StringType:
 		f = StringField{a.maxStr}
 	}
@@ -344,14 +406,44 @@ func (a *MinAggState) GetTupleDesc() *TupleDesc {
 	return &TupleDesc{[]FieldType{{a.alias, "", a.expr.GetExprType().Ftype}}}
 }
 
-func (a *MinAggState) Finalize() *Tuple {
+func (a *MinAggState) Finalize(stats map[string]map[string]float64) *Tuple {
 	// TODO: some code goes here
 	var f DBValue
 	switch a.expr.GetExprType().Ftype {
 	case IntType:
 		f = IntField{a.minInt}
+		if stats != nil {
+			fieldName := a.expr.GetExprType().Fname
+			fieldStats := stats[fieldName]
+			if fieldStats != nil {
+				fmt.Printf("Using stats!\n")
+				if fieldStats[STDDEV] == -1 {
+					// https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
+					fieldStats[STDDEV] = fieldStats[SUMSQUARESDIFF] / stats[N][MEAN]
+				}
+				estMin := int64(fieldStats[MEAN] - 3*fieldStats[STDDEV])
+				if estMin < a.minInt {
+					f = IntField{estMin}
+				}
+			}
+		}
 	case FloatType:
 		f = FloatField{a.minFloat}
+		if stats != nil {
+			fieldName := a.expr.GetExprType().Fname
+			fieldStats := stats[fieldName]
+			if fieldStats != nil {
+				fmt.Printf("Using stats!\n")
+				if fieldStats[STDDEV] == -1 {
+					// https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
+					fieldStats[STDDEV] = fieldStats[SUMSQUARESDIFF] / stats[N][MEAN]
+				}
+				estMin := fieldStats[MEAN] - 3*fieldStats[STDDEV]
+				if estMin > a.minFloat {
+					f = FloatField{estMin}
+				}
+			}
+		}
 	case StringType:
 		f = StringField{a.minStr}
 	}

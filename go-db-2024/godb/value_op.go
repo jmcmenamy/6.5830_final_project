@@ -8,6 +8,10 @@ type ValueOp struct {
 	exprs []([]Expr)
 }
 
+func (v *ValueOp) Statistics() map[string]map[string]float64 {
+	return nil
+}
+
 func NewValueOp(exprs []([]Expr)) *ValueOp {
 	var td TupleDesc
 	if len(exprs) > 0 {

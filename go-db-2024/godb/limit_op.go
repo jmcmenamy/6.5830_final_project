@@ -32,6 +32,10 @@ func (l *LimitOp) Descriptor() *TupleDesc {
 	return l.child.Descriptor()
 }
 
+func (l *LimitOp) Statistics() map[string]map[string]float64 {
+	return l.child.Statistics()
+}
+
 // Limit operator implementation. This function should iterate over the results
 // of the child iterator, and limit the result set to the first [lim] tuples it
 // sees (where lim is specified in the constructor).

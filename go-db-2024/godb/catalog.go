@@ -165,11 +165,15 @@ func (c *Catalog) addTable(named string, desc TupleDesc, options ...bool) (DBFil
 	// fmt.Println("calling heap file with %v\n", c.TableNameToMetadataFile(named))
 	// hf, err := NewHeapFile(c.tableNameToFile(t.name), t.desc.copy(), c.bufferPool, c.tableNameToBackingFile(t.name))
 	var hf *HeapFile
-	if len(options) > 0 && !options[0] {
-		hf, err = NewHeapFile(c.tableNameToFile(named), &desc, c.bufferPool)
-	} else {
-		hf, err = NewHeapFile(c.tableNameToFile(named), &desc, c.bufferPool, c.TableNameToMetadataFile(named))
+	metaDataFileName := ""
+	statFileName := ""
+	if len(options) > 0 && options[0] {
+		metaDataFileName = c.TableNameToMetadataFile(named)
 	}
+	if len(options) > 1 && options[1] {
+		statFileName = c.TableNameToStatFile(named)
+	}
+	hf, err = NewHeapFile(c.tableNameToFile(named), &desc, c.bufferPool, metaDataFileName, statFileName)
 	if err != nil {
 		return nil, err
 	}
@@ -198,6 +202,10 @@ func (c *Catalog) tableNameToFile(tableName string) string {
 
 func (c *Catalog) TableNameToMetadataFile(tableName string) string {
 	return c.rootPath + "/" + tableName + "Info.txt"
+}
+
+func (c *Catalog) TableNameToStatFile(tableName string) string {
+	return c.rootPath + "/" + tableName + "Stat.txt"
 }
 
 func (c *Catalog) GetTableInfo(named string) (*Table, error) {

@@ -16,6 +16,15 @@ import (
 
 var DEBUGHEAPFILE = false
 
+var MEAN = "mean"
+var STDDEV = "standardDeviation"
+
+// from https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
+var SUMSQUARESDIFF = "SumSquaresDiff"
+var N = "n"
+var OFFSET = "offset"
+var ESTIMATEDLINES = "estimatedLines"
+
 func DebugHeapFile(format string, a ...any) (int, error) {
 	if DEBUGHEAPFILE || GLOBALDEBUG {
 		return fmt.Println(fmt.Sprintf(format, a...))
@@ -36,14 +45,38 @@ type HeapFile struct {
 	numSlots           int
 	fileName           string
 	metadataFileName   string
+	statsFileName      string
 	loadedEntireFile   bool
 	metadataFile       *os.File
+	statsFile          *os.File
 	tupleSize          int
 	numPages           int
 	file               *os.File
 	pagesWithFreeSpace map[int]bool
 	numInserted        int
 	offSetsLoaded      map[int64]bool
+	statNames          []string
+	statistics         map[string]map[string]float64
+}
+
+func (f *HeapFile) writeToStatsFile() error {
+	fmt.Printf("Writing here %v %v\n", f.statsFile, len(f.statistics))
+	if f.statsFile == nil {
+		return nil
+	}
+	// overwrite entire file to replace stats
+	f.statsFile.Seek(0, io.SeekStart)
+	statsFileContent := fmt.Sprintf("FieldName,%v,%v,%v,%v\n", MEAN, STDDEV, SUMSQUARESDIFF, N)
+	for field, stats := range f.statistics {
+		statsFileContent += fmt.Sprintf("%s,%.2f,%.2f,%.2f,%.2f\n",
+			field, stats[MEAN], stats[STDDEV], stats[SUMSQUARESDIFF], stats[N])
+	}
+	_, err := f.statsFile.WriteString(statsFileContent)
+	fmt.Printf("Wrote here %v %v\n", f.statsFile, len(f.statistics))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Create a HeapFile.
@@ -57,11 +90,17 @@ func NewHeapFile(fromFile string, td *TupleDesc, bp *BufferPool, extraArgs ...st
 
 	// awkward because of backwards compatibility
 	metadataFileName := ""
+	statsFileName := ""
 	if len(extraArgs) > 0 {
 		// fmt.Println("Extra args greater than 0\n")
 		metadataFileName = extraArgs[0]
 	}
-	heapFile := &HeapFile{bufPool: bp, desc: td, fileName: fromFile, pagesWithFreeSpace: make(map[int]bool), metadataFileName: metadataFileName}
+	if len(extraArgs) > 1 {
+		statsFileName = extraArgs[1]
+	}
+	heapFile := &HeapFile{bufPool: bp, desc: td, fileName: fromFile, pagesWithFreeSpace: make(map[int]bool), metadataFileName: metadataFileName, statsFileName: statsFileName}
+	heapFile.statistics = make(map[string]map[string]float64)
+
 	// fmt.Printf("backing file is %v\n", metadataFileName)
 
 	// calculate the number of slots and tuple size
@@ -100,7 +139,89 @@ func NewHeapFile(fromFile string, td *TupleDesc, bp *BufferPool, extraArgs ...st
 
 	}
 
+	if statsFileName != "" {
+
+		fmt.Printf("got here\n")
+		statsFile, err := os.OpenFile(statsFileName, os.O_RDWR, 0644)
+		if err != nil {
+			fmt.Printf("got err rrhere %v\n", err)
+			if !os.IsNotExist(err) {
+				fmt.Printf("uhh bro %v\n", err)
+				return nil, err
+			}
+			fmt.Printf("got err here %v\n", err)
+			statsFile, err = os.OpenFile(statsFileName, os.O_RDWR|os.O_CREATE, 0644)
+			if err != nil {
+				fmt.Printf("uhh bro %v %v\n", err, statsFile)
+				return nil, err
+			}
+			heapFile.statsFile = statsFile
+			fmt.Printf("setting here %v\n", heapFile.statsFile)
+			err = heapFile.writeToStatsFile()
+			if err != nil {
+				fmt.Printf("got err here %v\n", err)
+				return nil, err
+			}
+		} else {
+			fmt.Printf("nil err/????? %v %v\n", statsFile, err)
+		}
+		heapFile.statsFile = statsFile
+		err = heapFile.ProcessStatsFile(statsFile)
+		if err != nil {
+			fmt.Printf("uhh brooo %v %v\n", err, statsFile)
+			return nil, err
+		}
+		fmt.Printf("look here %v\n", statsFile)
+		fileInfo, err := heapFile.file.Stat()
+		if err != nil {
+			return nil, err
+		}
+		estimatedLinesInFile := int(fileInfo.Size()) / heapFile.tupleSize
+		estLinesStats, ok := heapFile.statistics[ESTIMATEDLINES]
+		if !ok {
+			heapFile.statistics[ESTIMATEDLINES] = make(map[string]float64)
+			estLinesStats = heapFile.statistics[ESTIMATEDLINES]
+		}
+		estLinesStats[MEAN] = float64(estimatedLinesInFile)
+	}
+
+	fmt.Printf("here stats file is %v %v\n", heapFile.statsFile, statsFileName)
 	return heapFile, nil //replace me
+}
+
+func (f *HeapFile) Statistics() map[string]map[string]float64 {
+	return f.statistics
+}
+
+func (f *HeapFile) ProcessStatsFile(file *os.File) error {
+	fmt.Printf("entering %v\n", file)
+	scanner := bufio.NewScanner(file)
+	scanner.Scan()
+	firstLine := scanner.Text()
+	statNames := strings.Split(firstLine, ",")
+	f.statNames = statNames
+	for scanner.Scan() {
+		line := scanner.Text()
+		vals := strings.Split(line, ",")
+		fieldName := vals[0]
+		for i, statVal := range vals {
+			if i == 0 {
+				continue
+			}
+			fieldStats, ok := f.statistics[fieldName]
+			if !ok {
+				f.statistics[fieldName] = make(map[string]float64)
+				fieldStats = f.statistics[fieldName]
+			}
+			floatVal, err := strconv.ParseFloat(statVal, 64)
+			if err != nil {
+				return err
+			}
+			fieldStats[statNames[i]] = floatVal
+		}
+	}
+	fmt.Printf("stats are now %v %v\n", f.statistics, file)
+	return nil
 }
 
 func (f *HeapFile) ProcessMetadataFile(file *os.File) error {
@@ -191,7 +312,7 @@ func getSampledOffsets(offsets []int64, sampleRate float32) []int64 {
 // If fieldStats is nil, do not select for non-outlier rows during sampling.
 // Otherwise, return error if line contains an outlier numerical field based on
 // mean, standard deviation.
-func (f *HeapFile) loadLine(line string, sep string, fieldStats map[string][2]float64) error {
+func (f *HeapFile) loadLine(line string, sep string, fieldStats map[string]map[string]float64) error {
 	fields := strings.Split(line, sep)
 	numFields := len(fields)
 
@@ -205,10 +326,12 @@ func (f *HeapFile) loadLine(line string, sep string, fieldStats map[string][2]fl
 
 	var newFields []DBValue
 	for fno, field := range fields {
+		var floatVal float64
+		var err error
 		switch f.Descriptor().Fields[fno].Ftype {
 		case IntType:
 			field = strings.TrimSpace(field)
-			floatVal, err := strconv.ParseFloat(field, 64)
+			floatVal, err = strconv.ParseFloat(field, 64)
 			if err != nil {
 				return GoDBError{TypeMismatchError, fmt.Sprintf("LoadFromCSV: couldn't convert value %s to int", field)}
 			}
@@ -217,14 +340,15 @@ func (f *HeapFile) loadLine(line string, sep string, fieldStats map[string][2]fl
 			if fieldStats != nil {
 				fieldName := desc.Fields[fno].Fname
 				stats := fieldStats[fieldName]
-				mean, stddev := stats[0], stats[1]
-				if floatVal > mean+(2*stddev) || floatVal < mean-(2*stddev) {
+				mean, ok := stats[MEAN]
+				stddev, ok2 := stats[STDDEV]
+				if ok && ok2 && (floatVal > mean+(2*stddev) || floatVal < mean-(2*stddev)) {
 					return fmt.Errorf("outlier value %v for field %v (%v, %v). not inserted into database", floatVal, fieldName, mean, stddev)
 				}
 			}
 		case FloatType:
 			field = strings.TrimSpace(field)
-			floatVal, err := strconv.ParseFloat(field, 64)
+			floatVal, err = strconv.ParseFloat(field, 64)
 			if err != nil {
 				return GoDBError{TypeMismatchError, fmt.Sprintf("LoadFromCSV: couldn't convert value %s to int", field)}
 			}
@@ -233,8 +357,9 @@ func (f *HeapFile) loadLine(line string, sep string, fieldStats map[string][2]fl
 			if fieldStats != nil {
 				fieldName := desc.Fields[fno].Fname
 				stats := fieldStats[fieldName]
-				mean, stddev := stats[0], stats[1]
-				if floatVal > mean+(2*stddev) || floatVal < mean-(2*stddev) {
+				mean, ok := stats[MEAN]
+				stddev, ok2 := stats[STDDEV]
+				if ok && ok2 && (floatVal > mean+(2*stddev) || floatVal < mean-(2*stddev)) {
 					return fmt.Errorf("outlier value %v for field %v (%v, %v). not inserted into database", floatVal, fieldName, mean, stddev)
 				}
 			}
@@ -243,6 +368,28 @@ func (f *HeapFile) loadLine(line string, sep string, fieldStats map[string][2]fl
 				field = field[0:StringLength]
 			}
 			newFields = append(newFields, StringField{field})
+		}
+		nStats, ok := f.statistics[N]
+		if !ok {
+			f.statistics[N] = make(map[string]float64)
+			nStats = f.statistics[N]
+		}
+		nStats[MEAN] += 1
+		n := nStats[MEAN]
+		if f.Descriptor().Fields[fno].Ftype == FloatType || f.Descriptor().Fields[fno].Ftype == IntType {
+			// update our running statistics
+			// using https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
+			fieldName := desc.Fields[fno].Fname
+			fieldStats, ok := f.statistics[fieldName]
+			if !ok {
+				f.statistics[fieldName] = make(map[string]float64)
+				// sentinel value to let us know if we need to compute this later on for optimized queries
+				f.statistics[fieldName][STDDEV] = -1
+				fieldStats = f.statistics[fieldName]
+			}
+			newMean := fieldStats[MEAN] + (floatVal-fieldStats[MEAN])/n
+			fieldStats[SUMSQUARESDIFF] += (floatVal - fieldStats[MEAN]) * (floatVal - newMean)
+			fieldStats[MEAN] = newMean
 		}
 	}
 	newT := Tuple{*f.Descriptor(), newFields, nil}
@@ -266,7 +413,7 @@ func (f *HeapFile) loadLine(line string, sep string, fieldStats map[string][2]fl
 // Returns an error if the field cannot be opened or if a line is malformed
 // We provide the implementation of this method, but it won't work until
 // [HeapFile.insertTuple] and some other utility functions are implemented
-func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool, fieldStats map[string][2]float64) error {
+func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, skipLastField bool, fieldStats map[string]map[string]float64) error {
 	if f.loadedEntireFile {
 		return nil
 	}
@@ -286,7 +433,7 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 	if estimatedLinesInFile >= samplingThreshold {
 		reader := bufio.NewReader(file)
 		numSampledLines := 0
-		for numSampledLines < int(sampleRate*float64(estimatedLinesInFile)) || len(f.offSetsLoaded) >= estimatedLinesInFile-100 {
+		for numSampledLines < int(sampleRate*float64(estimatedLinesInFile)) && len(f.offSetsLoaded) <= estimatedLinesInFile-100 {
 			randomOffset := rand.Int63n(fileInfo.Size() - 1)
 			file.Seek(randomOffset, io.SeekStart)
 			_, err := reader.ReadString('\n')
@@ -300,8 +447,10 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 			if f.offSetsLoaded[newOffset] {
 				continue
 			}
-			f.offSetsLoaded[newOffset] = true
-			newOffsetsLoaded[newOffset] = true
+			if f.metadataFile != nil {
+				f.offSetsLoaded[newOffset] = true
+				newOffsetsLoaded[newOffset] = true
+			}
 			// numSampledLines++
 
 			line, err := reader.ReadString('\n')
@@ -316,37 +465,40 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 
 			reader.Reset(file)
 		}
-
-		// sampledOffsets := getSampledOffsets(offsets, sampleRate)
-		// for _, offset := range sampledOffsets {
-		// 	file.Seek(offset, 0)
-		// 	line, err := reader.ReadString('\n')
-		// 	if err != nil {
-		// 		return fmt.Errorf("error reading line at byte offset %v", offset)
-		// 	}
-
-		// 	f.loadLine(line, sep)
-
-		// 	reader.Reset(file)
-		// }
+		if numSampledLines == 0 {
+			f.loadedEntireFile = true
+		}
 	} else {
 		file.Seek(0, 0)
 		scanner := bufio.NewScanner(file)
-
+		// Get the current file offset (position)
+		offset, err := file.Seek(0, io.SeekCurrent)
+		if err != nil {
+			fmt.Println("Error getting file offset:", err)
+			return err
+		}
 		for scanner.Scan() {
 			line := scanner.Text()
+			if f.offSetsLoaded[offset] {
+				// Get the current file offset (position)
+				offset, err = file.Seek(0, io.SeekCurrent)
+				if err != nil {
+					fmt.Println("Error getting file offset:", err)
+					return err
+				}
+				continue
+			}
+			if f.metadataFile != nil {
+				f.offSetsLoaded[offset] = true
+				newOffsetsLoaded[offset] = true
+			}
+			f.loadLine(line, sep, nil)
 			// Get the current file offset (position)
-			offset, err := file.Seek(0, io.SeekCurrent)
+			offset, err = file.Seek(0, io.SeekCurrent)
 			if err != nil {
 				fmt.Println("Error getting file offset:", err)
 				return err
 			}
-			if f.offSetsLoaded[offset] {
-				continue
-			}
-			f.offSetsLoaded[offset] = true
-			newOffsetsLoaded[offset] = true
-			f.loadLine(line, sep, nil)
 		}
 		f.loadedEntireFile = true
 	}
@@ -370,8 +522,141 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 	return nil
 }
 
-func computeStats(fieldValues map[string][]float64) map[string][2]float64 {
-	result := make(map[string][2]float64)
+// Load the contents of a heap file from a specified CSV file.  Parameters are as follows:
+// - hasHeader:  whether or not the CSV file has a header
+// - sep: the character to use to separate fields
+// - skipLastField: if true, the final field is skipped (some TPC datasets include a trailing separator on each line)
+// Returns an error if the field cannot be opened or if a line is malformed
+// We provide the implementation of this method, but it won't work until
+// [HeapFile.insertTuple] and some other utility functions are implemented
+func (f *HeapFile) LoadSomeFromCSVContiguous(file *os.File, hasHeader bool, sep string, skipLastField bool) error {
+	if f.loadedEntireFile {
+		return nil
+	}
+	f.bufPool.CanFlushWhenFull = true
+	defer func() { f.bufPool.CanFlushWhenFull = false }()
+
+	// offsets := getLineOffsets(file)
+
+	samplingThreshold := 1000
+	var sampleRate float64 = 0.01
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	newOffsetsLoaded := make(map[int64]bool)
+	estimatedLinesInFile := int(fileInfo.Size()) / f.tupleSize
+	contiguousOffset := f.statistics[OFFSET][MEAN]
+	file.Seek(int64(contiguousOffset), io.SeekStart)
+	fmt.Printf("gonna start reading from %v\n", contiguousOffset)
+	scanner := bufio.NewScanner(file)
+	if estimatedLinesInFile >= samplingThreshold {
+		fmt.Printf("estimated is %v (%v/%v) sampling is %v\n", estimatedLinesInFile, fileInfo.Size(), f.tupleSize, samplingThreshold)
+		numSampledLines := 0
+		newOffset, err := file.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return err
+		}
+		for scanner.Scan() && numSampledLines < int(sampleRate*float64(estimatedLinesInFile)) && len(f.offSetsLoaded) <= estimatedLinesInFile-100 {
+			// fmt.Printf("got in here\n")
+			line := scanner.Text()
+			if f.offSetsLoaded[newOffset] {
+				newOffset, err = file.Seek(0, io.SeekCurrent)
+				if err != nil {
+					return err
+				}
+				continue
+			}
+			if f.metadataFile != nil {
+				f.offSetsLoaded[newOffset] = true
+				newOffsetsLoaded[newOffset] = true
+			}
+
+			numSampledLines += 1
+
+			f.loadLine(line, sep, nil)
+			newOffset, err = file.Seek(0, io.SeekCurrent)
+			if err != nil {
+				return err
+			}
+		}
+
+		contiguousOffset = float64(newOffset)
+		fmt.Printf("loaded %v new lines \n", numSampledLines)
+		if numSampledLines == 0 {
+			f.loadedEntireFile = true
+		}
+
+	} else {
+		file.Seek(0, 0)
+		scanner := bufio.NewScanner(file)
+		offset, err := file.Seek(0, io.SeekCurrent)
+		if err != nil {
+			fmt.Println("Error getting file offset:", err)
+			return err
+		}
+		for scanner.Scan() {
+			line := scanner.Text()
+			if f.offSetsLoaded[offset] {
+				offset, err = file.Seek(0, io.SeekCurrent)
+				if err != nil {
+					fmt.Println("Error getting file offset:", err)
+					return err
+				}
+				continue
+			}
+			if f.metadataFile != nil {
+				f.offSetsLoaded[offset] = true
+				newOffsetsLoaded[offset] = true
+			}
+			f.loadLine(line, sep, nil)
+			// Get the current file offset (position)
+			offset, err = file.Seek(0, io.SeekCurrent)
+			if err != nil {
+				fmt.Println("Error getting file offset:", err)
+				return err
+			}
+		}
+		fmt.Printf("read entire file?\n")
+		f.loadedEntireFile = true
+		contiguousOffset = float64(offset)
+	}
+	bp := f.bufPool
+	// Force dirty pages to disk. CommitTransaction may not be implemented
+	// yet if this is called in lab 1 or 2.
+	bp.FlushAllPages()
+
+	offsetStats, ok := f.statistics[OFFSET]
+	if !ok {
+		f.statistics[OFFSET] = make(map[string]float64)
+		offsetStats = f.statistics[OFFSET]
+	}
+	offsetStats[MEAN] = contiguousOffset
+	fmt.Printf("offset is now %v\n", contiguousOffset)
+
+	newString := ""
+	for offset, _ := range newOffsetsLoaded {
+		// fmt.Printf("offset is %v, str is %v\n", offset, string(offset))
+		newString += fmt.Sprintf("%v,", offset)
+	}
+	if newString != "" && newString != "," {
+		n, err := f.metadataFile.WriteString(newString)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Wrote %v bytes to %v\n", n, f.metadataFileName)
+	}
+
+	err = f.writeToStatsFile()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func computeStats(fieldValues map[string][]float64) map[string]map[string]float64 {
+	result := make(map[string]map[string]float64)
 
 	for key, values := range fieldValues {
 		numValues := float64(len(values))
@@ -390,7 +675,7 @@ func computeStats(fieldValues map[string][]float64) map[string][2]float64 {
 		}
 		stddev := math.Sqrt(varianceSum / numValues)
 
-		result[key] = [2]float64{mean, stddev}
+		result[key] = map[string]float64{MEAN: mean, STDDEV: stddev}
 	}
 	return result
 }
@@ -452,9 +737,14 @@ func (f *HeapFile) StatFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 	}
 	defer file.Close()
 
+	_, err = file.WriteString(fmt.Sprintf("FieldName,%v,%v\n", MEAN, STDDEV))
+	if err != nil {
+		return err
+	}
+
 	for field, stats := range fieldStats {
 		line := fmt.Sprintf("%s,%.2f,%.2f\n",
-			field, stats[0], stats[1])
+			field, stats[MEAN], stats[STDDEV])
 		_, err := file.WriteString(line)
 		if err != nil {
 			return fmt.Errorf("failed to write to file: %w", err)
@@ -465,7 +755,7 @@ func (f *HeapFile) StatFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 
 // Return a map mapping field names to [mean, stddev] from a CSV file containing
 // comma-delimited stats.
-func LoadStat(statFilename string) (map[string][2]float64, error) {
+func LoadStat(statFilename string) (map[string]map[string]float64, error) {
 	file, err := os.Open(statFilename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %v", err)
@@ -473,28 +763,35 @@ func LoadStat(statFilename string) (map[string][2]float64, error) {
 	defer file.Close()
 
 	reader := csv.NewReader(file)
+	// skip the first line
+	// reader.Read()
 	records, err := reader.ReadAll()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CSV: %v", err)
 	}
 
-	fieldStats := make(map[string][2]float64)
-	for _, record := range records {
-		if len(record) != 3 {
-			return nil, fmt.Errorf("invalid record format: %v", record)
+	var statNames []string
+	fieldStats := make(map[string]map[string]float64)
+	for i, record := range records {
+		if i == 0 {
+			statNames = make([]string, len(record))
+			copy(statNames, record)
+			continue
 		}
-
-		mean, err := strconv.ParseFloat(record[1], 64)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse mean for key %s: %v", record[0], err)
+		// if len(record) != 3 {
+		// 	return nil, fmt.Errorf("invalid record format: %v", record)
+		// }
+		fieldStats[record[0]] = make(map[string]float64)
+		for j, strVal := range record {
+			if j == 0 {
+				continue
+			}
+			val, err := strconv.ParseFloat(strVal, 64)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse %v for key %v: %v", statNames[j], strVal, err)
+			}
+			fieldStats[record[0]][statNames[j]] = val
 		}
-
-		stddev, err := strconv.ParseFloat(record[2], 64)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse stddev for key %s: %v", record[0], err)
-		}
-
-		fieldStats[record[0]] = [2]float64{mean, stddev}
 	}
 
 	return fieldStats, nil
@@ -517,7 +814,7 @@ func (f *HeapFile) StatAndLoadFromCSV(file *os.File, hasHeader bool, sep string,
 	// Read stats from CSV file and load into map
 	fieldStats, err := LoadStat(statFilename)
 	if err != nil {
-		return fmt.Errorf("failed to read stats from file %v", statFilename)
+		return fmt.Errorf("failed to read stats from file %v. %v", statFilename, err)
 	}
 
 	// Randomly sample rows (with non-outlier values) to insert into database
@@ -600,6 +897,7 @@ func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 	// Force dirty pages to disk. CommitTransaction may not be implemented
 	// yet if this is called in lab 1 or 2.
 	bp.FlushAllPages()
+	f.loadedEntireFile = true
 	return nil
 }
 

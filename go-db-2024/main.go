@@ -24,10 +24,14 @@ Available shell commands:
 	\a : Toggle aligned vs csv output
     \o : Toggle query optimization
 	\l table path/to/file [sep] [hasHeader]: Append csv file to end of table.  Default to sep = ',', hasHeader = 'true'
-	\i path/to/file [extension] [useMetaDataFile] [sep] [hasHeader] [mode]: Change the current database to a specified catalog file, and load from csv-like files in same directory as catalog file, with given separator Default to mode = 'Some' (Options 'All', 'Some', 'Diagnostic'), extension = 'tbl', sep = '|', hasHeader = 'true'
+	\i path/to/file [useMetaDataFile] [useStatFile] [mode] [extension] [sep] [hasHeader]: Change the current database to a specified catalog file, and load from csv-like files in same directory as catalog file, with given separator Default to mode = 'Some' (Options 'All', 'Some', 'Diagnostic'), extension = 'tbl', sep = '|', hasHeader = 'true'
 		- mode 'All' loads all the data from the csv
-		- mode 'Some' loads only some of the data from the csv
-		- mode 'Diagnostic' uses both strategies for each query, displaying results for each mode
+		- mode 'Some' loads only some of the data from the csv, randomly seeking to each line
+		- mode 'Contiguous' loads only some of the data from the csv, in an in-order contiguous manner
+		- mode 'Stratified' loads only some of the data from the csv, in reading contiguously starting from a random offset
+		- useMetaDataFile will store the offsets that have been loaded in order to not load them again
+		- useStatFile will store statistics for each numerical column in order to make queries more accurate
+
 	\z : Compute statistics for the database`
 
 func printCatalog(c *godb.Catalog) {
@@ -59,8 +63,9 @@ func main() {
 
 	catName := "catalog.txt"
 	catPath := "godb"
-	mode := "Some"
+	mode := "Contiguous"
 	useMetaDataFile := true
+	useStatFile := true
 	extension := "tbl"
 	sep := "|"
 	hasHeader := false
@@ -190,27 +195,31 @@ func main() {
 					continue
 				}
 				splits := strings.Split(text, " ")
+				// [useMetaDataFile] [useStatFile] [mode] [extension] [sep] [hasHeader]
 				path := splits[1]
 				if len(splits) > 2 {
 					useMetaDataFile = splits[2] != "false"
 				}
 				if len(splits) > 3 {
-					mode = splits[3]
+					useStatFile = splits[3] != "false"
 				}
 				if len(splits) > 4 {
-					extension = splits[4]
+					mode = splits[4]
 				}
 				if len(splits) > 5 {
-					sep = splits[5]
+					extension = splits[5]
 				}
 				if len(splits) > 6 {
-					hasHeader = splits[6] != "false"
+					sep = splits[6]
+				}
+				if len(splits) > 7 {
+					hasHeader = splits[7] != "false"
 				}
 				pathAr := strings.Split(path, "/")
 				catName = pathAr[len(pathAr)-1]
 				catPath = strings.Join(pathAr[0:len(pathAr)-1], "/")
 				// fmt.Printf("catName is %v, catPath is %v\n", catName, catPath)
-				c, err = godb.NewCatalogFromFile(catName, bp, catPath, useMetaDataFile)
+				c, err = godb.NewCatalogFromFile(catName, bp, catPath, useMetaDataFile, useStatFile)
 				if err != nil {
 					fmt.Printf("failed load catalog, %s\n", err.Error())
 					continue
@@ -220,7 +229,7 @@ func main() {
 
 				// load the csv files to each table
 
-				if mode == "Some" {
+				if mode == "Some" || mode == "Contiguous" || mode == "Stratified" {
 					continue
 				}
 
@@ -320,7 +329,7 @@ func main() {
 			continue
 		}
 
-		if mode == "Some" {
+		if mode == "Some" || mode == "Contiguous" || mode == "Stratified" {
 			// load more from each table
 			for tableName, _ := range tableNames {
 				//todo -- following code assumes data is in heap files
@@ -335,7 +344,11 @@ func main() {
 					fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
 					continue
 				}
-				err = heapFile.LoadSomeFromCSV(f, hasHeader, sep, false, nil)
+				if mode == "Some" {
+					err = heapFile.LoadSomeFromCSV(f, hasHeader, sep, false, nil)
+				} else if mode == "Contiguous" {
+					err = heapFile.LoadSomeFromCSVContiguous(f, hasHeader, sep, false)
+				}
 				if err != nil {
 					fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
 					continue

@@ -35,6 +35,10 @@ func NewOrderBy(orderByFields []Expr, child Operator, ascending []bool) (*OrderB
 	return &OrderBy{orderByFields, child, ascending, nil}, nil
 }
 
+func (o *OrderBy) Statistics() map[string]map[string]float64 {
+	return o.child.Statistics()
+}
+
 // Return the tuple descriptor.
 //
 // Note that the order by just changes the order of the child tuples, not the
