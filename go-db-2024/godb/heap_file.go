@@ -176,7 +176,11 @@ func NewHeapFile(fromFile string, td *TupleDesc, bp *BufferPool, extraArgs ...st
 			return nil, err
 		}
 		fmt.Printf("look here %v\n", statsFile)
-		fileInfo, err := heapFile.file.Stat()
+		tblFile, err := os.OpenFile(strings.Replace(fromFile, ".dat", ".tbl", 1), os.O_RDWR, 0644)
+		if err != nil {
+			return nil, err
+		}
+		fileInfo, err := tblFile.Stat()
 		if err != nil {
 			return nil, err
 		}
@@ -186,6 +190,7 @@ func NewHeapFile(fromFile string, td *TupleDesc, bp *BufferPool, extraArgs ...st
 			heapFile.statistics[ESTIMATEDLINES] = make(map[string]float64)
 			estLinesStats = heapFile.statistics[ESTIMATEDLINES]
 		}
+		fmt.Printf("Writing estimates lines as %v for %v file size is %v tuple size is %v\n", estimatedLinesInFile, statsFileName, fileInfo.Name(), heapFile.tupleSize)
 		estLinesStats[MEAN] = float64(estimatedLinesInFile)
 	}
 
@@ -556,7 +561,7 @@ func (f *HeapFile) LoadSomeFromCSVContiguous(file *os.File, hasHeader bool, sep 
 	estimatedLinesInFile := int(fileInfo.Size()) / f.tupleSize
 	contiguousOffset := f.statistics[OFFSET][MEAN]
 	file.Seek(int64(contiguousOffset), io.SeekStart)
-	fmt.Printf("gonna start reading from %v\n", contiguousOffset)
+	fmt.Printf("gonna start reading from %v. file size is %v tuples size is %v\n", contiguousOffset, fileInfo.Name(), f.tupleSize)
 	scanner := bufio.NewScanner(file)
 	if estimatedLinesInFile >= samplingThreshold {
 		fmt.Printf("estimated is %v (%v/%v) sampling is %v\n", estimatedLinesInFile, fileInfo.Size(), f.tupleSize, samplingThreshold)
@@ -653,6 +658,145 @@ func (f *HeapFile) LoadSomeFromCSVContiguous(file *os.File, hasHeader bool, sep 
 			return err
 		}
 		fmt.Printf("Wrote %v bytes to %v\n", n, f.metadataFileName)
+	}
+
+	err = f.writeToStatsFile()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Load the contents of a heap file from a specified CSV file.  Parameters are as follows:
+// - hasHeader:  whether or not the CSV file has a header
+// - sep: the character to use to separate fields
+// - skipLastField: if true, the final field is skipped (some TPC datasets include a trailing separator on each line)
+// Returns an error if the field cannot be opened or if a line is malformed
+// We provide the implementation of this method, but it won't work until
+// [HeapFile.insertTuple] and some other utility functions are implemented
+func (f *HeapFile) LoadSomeFromCSVContiguousStratified(file *os.File, hasHeader bool, sep string, skipLastField bool) error {
+	if f.loadedEntireFile {
+		return nil
+	}
+	f.bufPool.CanFlushWhenFull = true
+	defer func() { f.bufPool.CanFlushWhenFull = false }()
+
+	// offsets := getLineOffsets(file)
+
+	samplingThreshold := 1000
+	var sampleRate float64 = 0.01
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	newOffsetsLoaded := make(map[int64]bool)
+	estimatedLinesInFile := int(fileInfo.Size()) / f.tupleSize
+	randomOffset := rand.Int63n(fileInfo.Size() - 1)
+	file.Seek(randomOffset, io.SeekStart)
+	scanner := bufio.NewScanner(file)
+	scanner.Scan()
+	if estimatedLinesInFile >= samplingThreshold {
+		fmt.Printf("HEYO! estimated is %v (%v/%v) sampling is %v\n", estimatedLinesInFile, fileInfo.Size(), f.tupleSize, samplingThreshold)
+		numSampledLines := 0
+		newOffset, err := file.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return err
+		}
+		shouldContinue := true
+		retries := 1
+		for shouldContinue && numSampledLines < int(sampleRate*float64(estimatedLinesInFile)) && len(f.offSetsLoaded) <= estimatedLinesInFile-100 {
+			shouldContinue = scanner.Scan()
+			if !shouldContinue {
+				if retries == 0 {
+					fmt.Printf("breaking here?")
+					break
+				}
+				retries--
+				newOffset, err = file.Seek(0, io.SeekStart)
+				if err != nil {
+					return err
+				}
+				scanner = bufio.NewScanner(file)
+				continue
+			}
+			// fmt.Printf("got in here\n")
+			if f.metadataFile != nil && f.offSetsLoaded[newOffset] {
+				newOffset, err = file.Seek(0, io.SeekCurrent)
+				if err != nil {
+					return err
+				}
+				continue
+			}
+			line := scanner.Text()
+			if f.metadataFile != nil {
+				f.offSetsLoaded[newOffset] = true
+				newOffsetsLoaded[newOffset] = true
+			}
+
+			numSampledLines += 1
+
+			f.loadLine(line, sep, nil)
+			newOffset, err = file.Seek(0, io.SeekCurrent)
+			if err != nil {
+				return err
+			}
+		}
+
+		fmt.Printf("loaded %v new lines \n", numSampledLines)
+		if numSampledLines == 0 {
+			f.loadedEntireFile = true
+		}
+
+	} else {
+		file.Seek(0, 0)
+		scanner := bufio.NewScanner(file)
+		offset, err := file.Seek(0, io.SeekCurrent)
+		if err != nil {
+			fmt.Println("Error getting file offset:", err)
+			return err
+		}
+		for scanner.Scan() {
+			line := scanner.Text()
+			if f.offSetsLoaded[offset] {
+				offset, err = file.Seek(0, io.SeekCurrent)
+				if err != nil {
+					fmt.Println("Error getting file offset:", err)
+					return err
+				}
+				continue
+			}
+			if f.metadataFile != nil {
+				f.offSetsLoaded[offset] = true
+				newOffsetsLoaded[offset] = true
+			}
+			f.loadLine(line, sep, nil)
+			// Get the current file offset (position)
+			offset, err = file.Seek(0, io.SeekCurrent)
+			if err != nil {
+				fmt.Println("Error getting file offset:", err)
+				return err
+			}
+		}
+		fmt.Printf("read entire file?\n")
+		f.loadedEntireFile = true
+	}
+	bp := f.bufPool
+	// Force dirty pages to disk. CommitTransaction may not be implemented
+	// yet if this is called in lab 1 or 2.
+	bp.FlushAllPages()
+
+	newString := ""
+	for offset, _ := range newOffsetsLoaded {
+		// fmt.Printf("offset is %v, str is %v\n", offset, string(offset))
+		newString += fmt.Sprintf("%v,", offset)
+	}
+	if newString != "" && newString != "," {
+		n, err := f.metadataFile.WriteString(newString)
+		if err != nil {
+			return err
+		}
+		fmt.Printf(" HEYO ! Wrote %v bytes to %v\n", n, f.metadataFileName)
 	}
 
 	err = f.writeToStatsFile()

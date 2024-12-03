@@ -27,3 +27,4 @@
   but not use a metadata file to keep track of offsets that have been read
 - `\i ../tpch_raw_data/catalog.txt false true Contiguous` will read some of the data each time, contiguously iterating through the file,
   keep a stat file with the statistics for the subset of data it has read
+- `\i ../tpch_raw_data/catalog.txt true true Stratified` will read some of the data each time by randomly seeking to a point in the file, then reading contiguously from there.

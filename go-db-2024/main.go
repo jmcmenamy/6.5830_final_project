@@ -351,6 +351,8 @@ func main() {
 
 				} else if mode == "Contiguous" {
 					err = heapFile.LoadSomeFromCSVContiguous(f, hasHeader, sep, false)
+				} else if mode == "Stratified" {
+					err = heapFile.LoadSomeFromCSVContiguousStratified(f, hasHeader, sep, false)
 				}
 				if err != nil {
 					fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
