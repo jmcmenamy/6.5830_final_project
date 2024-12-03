@@ -329,7 +329,7 @@ func main() {
 			continue
 		}
 
-		if mode == "Some" || mode == "Contiguous" || mode == "Stratified" {
+		if mode == "Some" || mode == "Contiguous" || mode == "Stratified" || mode == "Stat" {
 			// load more from each table
 			for tableName, _ := range tableNames {
 				//todo -- following code assumes data is in heap files
@@ -344,7 +344,7 @@ func main() {
 					fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
 					continue
 				}
-				if mode == "Some" {
+				if mode == "Some" || mode == "Stat" {
 					err = heapFile.LoadSomeFromCSV(f, hasHeader, sep, false, nil)
 				} else if mode == "Contiguous" {
 					err = heapFile.LoadSomeFromCSVContiguous(f, hasHeader, sep, false)

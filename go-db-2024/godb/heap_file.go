@@ -25,6 +25,9 @@ var N = "n"
 var OFFSET = "offset"
 var ESTIMATEDLINES = "estimatedLines"
 
+// sentinel value to tell when the entire .tbl file has been loaded
+var COMPLETE = "complete"
+
 func DebugHeapFile(format string, a ...any) (int, error) {
 	if DEBUGHEAPFILE || GLOBALDEBUG {
 		return fmt.Println(fmt.Sprintf(format, a...))
@@ -57,6 +60,7 @@ type HeapFile struct {
 	offSetsLoaded      map[int64]bool
 	statNames          []string
 	statistics         map[string]map[string]float64
+	freezeStats        bool
 }
 
 func (f *HeapFile) writeToStatsFile() error {
@@ -325,6 +329,11 @@ func (f *HeapFile) loadLine(line string, sep string, fieldStats map[string]map[s
 	}
 
 	var newFields []DBValue
+	nStats, ok := f.statistics[N]
+	if !ok {
+		f.statistics[N] = make(map[string]float64)
+		nStats = f.statistics[N]
+	}
 	for fno, field := range fields {
 		var floatVal float64
 		var err error
@@ -369,29 +378,27 @@ func (f *HeapFile) loadLine(line string, sep string, fieldStats map[string]map[s
 			}
 			newFields = append(newFields, StringField{field})
 		}
-		nStats, ok := f.statistics[N]
-		if !ok {
-			f.statistics[N] = make(map[string]float64)
-			nStats = f.statistics[N]
-		}
-		nStats[MEAN] += 1
-		n := nStats[MEAN]
-		if f.Descriptor().Fields[fno].Ftype == FloatType || f.Descriptor().Fields[fno].Ftype == IntType {
-			// update our running statistics
-			// using https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
-			fieldName := desc.Fields[fno].Fname
-			fieldStats, ok := f.statistics[fieldName]
-			if !ok {
-				f.statistics[fieldName] = make(map[string]float64)
-				// sentinel value to let us know if we need to compute this later on for optimized queries
-				f.statistics[fieldName][STDDEV] = -1
-				fieldStats = f.statistics[fieldName]
+		if f.statistics[COMPLETE][MEAN] != 1 {
+			n := nStats[MEAN] + 1
+			if f.Descriptor().Fields[fno].Ftype == FloatType || f.Descriptor().Fields[fno].Ftype == IntType {
+				// update our running statistics
+				// using https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
+				fieldName := desc.Fields[fno].Fname
+				fieldStats, ok := f.statistics[fieldName]
+				if !ok {
+					f.statistics[fieldName] = make(map[string]float64)
+					// sentinel value to let us know if we need to compute this later on for optimized queries
+					f.statistics[fieldName][STDDEV] = -1
+					fieldStats = f.statistics[fieldName]
+				}
+				newMean := fieldStats[MEAN] + (floatVal-fieldStats[MEAN])/n
+				fieldStats[SUMSQUARESDIFF] += (floatVal - fieldStats[MEAN]) * (floatVal - newMean)
+				fieldStats[MEAN] = newMean
 			}
-			newMean := fieldStats[MEAN] + (floatVal-fieldStats[MEAN])/n
-			fieldStats[SUMSQUARESDIFF] += (floatVal - fieldStats[MEAN]) * (floatVal - newMean)
-			fieldStats[MEAN] = newMean
 		}
 	}
+	nStats[MEAN] += 1
+
 	newT := Tuple{*f.Descriptor(), newFields, nil}
 	tid := NewTID()
 	err := f.insertTuple(&newT, tid)
@@ -433,6 +440,7 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 	if estimatedLinesInFile >= samplingThreshold {
 		reader := bufio.NewReader(file)
 		numSampledLines := 0
+		fmt.Printf("Entering for loops len(f.offsetsLoaded) = %v and estiamtedLinesinFIle is %v\n", len(f.offSetsLoaded), estimatedLinesInFile)
 		for numSampledLines < int(sampleRate*float64(estimatedLinesInFile)) && len(f.offSetsLoaded) <= estimatedLinesInFile-100 {
 			randomOffset := rand.Int63n(fileInfo.Size() - 1)
 			file.Seek(randomOffset, io.SeekStart)
@@ -742,6 +750,11 @@ func (f *HeapFile) StatFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 		return err
 	}
 
+	// mark as complete so it's not updated
+	fieldStats[COMPLETE] = map[string]float64{MEAN: 1}
+	fieldStats[ESTIMATEDLINES] = map[string]float64{MEAN: float64(cnt - 1)}
+	fmt.Printf("Done scanning count is %v for %v\n", cnt-1, statFilename)
+
 	for field, stats := range fieldStats {
 		line := fmt.Sprintf("%s,%.2f,%.2f\n",
 			field, stats[MEAN], stats[STDDEV])
@@ -750,6 +763,7 @@ func (f *HeapFile) StatFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 			return fmt.Errorf("failed to write to file: %w", err)
 		}
 	}
+	f.statistics = fieldStats
 	return nil
 }
 

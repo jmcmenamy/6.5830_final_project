@@ -61,11 +61,14 @@ func (a *CountAggState) Finalize(stats map[string]map[string]float64) *Tuple {
 	td := a.GetTupleDesc()
 	f := IntField{int64(a.count)}
 	if stats != nil {
-		fmt.Printf("Using stats!\n")
 		estimatedLines := stats[ESTIMATEDLINES][MEAN]
 		linesRead := stats[N][MEAN]
 		if linesRead != 0 {
+			fmt.Printf("Using stats! %v %v %v %v %v\n", f.Value, stats[ESTIMATEDLINES], stats[N], stats[COMPLETE], stats[COMPLETE][MEAN] != 1)
 			f.Value = int64(float64(f.Value) * estimatedLines / linesRead)
+		} else {
+			fmt.Printf("not Using stats :( %v %v %v %v %v\n", f.Value, stats[ESTIMATEDLINES], stats[N], stats[COMPLETE], stats[COMPLETE][MEAN] != 1)
+
 		}
 	}
 	fs := []DBValue{f}
@@ -137,10 +140,11 @@ func (a *SumAggState) Finalize(stats map[string]map[string]float64) *Tuple {
 			fieldName := a.expr.GetExprType().Fname
 			fieldStats := stats[fieldName]
 			if fieldStats != nil {
-				fmt.Printf("Using stats!\n")
 				estimatedLines := stats[ESTIMATEDLINES][MEAN]
 				linesRead := stats[N][MEAN]
 				if linesRead != 0 {
+					fmt.Printf("Using stats! %v %v %v\n", a.sumInt, stats[ESTIMATEDLINES], stats[N])
+
 					f = IntField{int64(float64(a.sumInt) * estimatedLines / linesRead)}
 				}
 			}
@@ -151,10 +155,11 @@ func (a *SumAggState) Finalize(stats map[string]map[string]float64) *Tuple {
 			fieldName := a.expr.GetExprType().Fname
 			fieldStats := stats[fieldName]
 			if fieldStats != nil {
-				fmt.Printf("Using stats!\n")
 				estimatedLines := stats[ESTIMATEDLINES][MEAN]
 				linesRead := stats[N][MEAN]
 				if linesRead != 0 {
+					fmt.Printf("Using stats! %v %v %v\n", a.sumFloat, stats[ESTIMATEDLINES], stats[N])
+
 					f = FloatField{a.sumFloat * estimatedLines / linesRead}
 				}
 			}
@@ -306,8 +311,9 @@ func (a *MaxAggState) Finalize(stats map[string]map[string]float64) *Tuple {
 			fieldName := a.expr.GetExprType().Fname
 			fieldStats := stats[fieldName]
 			if fieldStats != nil {
-				fmt.Printf("Using stats!\n")
 				if fieldStats[STDDEV] == -1 {
+					fmt.Printf("Using stats! %v %v\n", stats[SUMSQUARESDIFF], stats[N])
+
 					// https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
 					fieldStats[STDDEV] = fieldStats[SUMSQUARESDIFF] / stats[N][MEAN]
 				}
@@ -323,8 +329,9 @@ func (a *MaxAggState) Finalize(stats map[string]map[string]float64) *Tuple {
 			fieldName := a.expr.GetExprType().Fname
 			fieldStats := stats[fieldName]
 			if fieldStats != nil {
-				fmt.Printf("Using stats!\n")
 				if fieldStats[STDDEV] == -1 {
+					fmt.Printf("Using stats! %v %v\n", stats[SUMSQUARESDIFF], stats[N])
+
 					// https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
 					fieldStats[STDDEV] = fieldStats[SUMSQUARESDIFF] / stats[N][MEAN]
 				}
@@ -416,8 +423,9 @@ func (a *MinAggState) Finalize(stats map[string]map[string]float64) *Tuple {
 			fieldName := a.expr.GetExprType().Fname
 			fieldStats := stats[fieldName]
 			if fieldStats != nil {
-				fmt.Printf("Using stats!\n")
 				if fieldStats[STDDEV] == -1 {
+					fmt.Printf("Using stats! %v %v\n", stats[SUMSQUARESDIFF], stats[N])
+
 					// https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
 					fieldStats[STDDEV] = fieldStats[SUMSQUARESDIFF] / stats[N][MEAN]
 				}
@@ -433,8 +441,9 @@ func (a *MinAggState) Finalize(stats map[string]map[string]float64) *Tuple {
 			fieldName := a.expr.GetExprType().Fname
 			fieldStats := stats[fieldName]
 			if fieldStats != nil {
-				fmt.Printf("Using stats!\n")
 				if fieldStats[STDDEV] == -1 {
+					fmt.Printf("Using stats! %v %v\n", stats[SUMSQUARESDIFF], stats[N])
+
 					// https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
 					fieldStats[STDDEV] = fieldStats[SUMSQUARESDIFF] / stats[N][MEAN]
 				}

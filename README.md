@@ -19,8 +19,8 @@
    the file on each query. The description in main.go describes how to change the
    arguments to change the behavior.
 
-- `\i ../tpch_raw_data/catalog.txt false All` will load all the data
-- `\i ../tpch_raw_data/catalog.txt false Stat` will load a randomly sampled
+- `\i ../tpch_raw_data/catalog.txt false false All` will load all the data
+- `\i ../tpch_raw_data/catalog.txt false false Stat` will load a randomly sampled
   subset of the data, while ensuring all loaded rows containing non-outlier values
   based on precomputed per-column statistics.
 - `\i ../tpch_raw_data/catalog.txt false` will read some of the data each time,
