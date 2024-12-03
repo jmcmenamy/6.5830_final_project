@@ -344,8 +344,11 @@ func main() {
 					fmt.Printf("\033[31;1m%s\033[0m\n", err.Error())
 					continue
 				}
-				if mode == "Some" || mode == "Stat" {
+				if mode == "Some" {
 					err = heapFile.LoadSomeFromCSV(f, hasHeader, sep, false, nil)
+				} else if mode == "Stat" {
+					err = heapFile.LoadSomeFromCSV(f, hasHeader, sep, false, heapFile.Statistics())
+
 				} else if mode == "Contiguous" {
 					err = heapFile.LoadSomeFromCSVContiguous(f, hasHeader, sep, false)
 				}
