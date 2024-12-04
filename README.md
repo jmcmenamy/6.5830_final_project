@@ -28,3 +28,7 @@
 - `\i ../tpch_raw_data/catalog.txt false true Contiguous` will read some of the data each time, contiguously iterating through the file,
   keep a stat file with the statistics for the subset of data it has read
 - `\i ../tpch_raw_data/catalog.txt true true Stratified` will read some of the data each time by randomly seeking to a point in the file, then reading contiguously from there.
+
+## Running Godb and removing metadata files between runs
+
+- `./rundb.sh "\i ../tpch_raw_data/catalog.txt"` will remove all .dat, Stat.txt, and Info.txt files in tpch_raw_data/ between runs. This makes it easier to do many trials. Just change the command within the quotes for the first input you want to put into godb. If you get an error running the script, do `chmod +x rundb.sh`
