@@ -45,7 +45,10 @@ func NewAggregator(emptyAggState []AggState, child Operator) *Aggregator {
 }
 
 func (a *Aggregator) Statistics() map[string]map[string]float64 {
-	return a.child.Statistics()
+	if len(a.groupByFields) == 0 {
+		return a.child.Statistics()
+	}
+	return make(map[string]map[string]float64)
 }
 
 // Return a TupleDescriptor for this aggregation.

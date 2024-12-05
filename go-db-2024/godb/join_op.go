@@ -40,22 +40,23 @@ func (hj *EqualityJoin) Descriptor() *TupleDesc {
 }
 
 func (hj *EqualityJoin) Statistics() map[string]map[string]float64 {
-	leftStat := (*hj.left).Statistics()
-	rightStat := (*hj.right).Statistics()
-	overallStat := make(map[string]map[string]float64)
-	for k, v := range leftStat {
-		overallStat[k] = make(map[string]float64)
-		for k2, v2 := range v {
-			overallStat[k][k2] = v2
-		}
-	}
-	for k, v := range rightStat {
-		overallStat[k] = make(map[string]float64)
-		for k2, v2 := range v {
-			overallStat[k][k2] = v2
-		}
-	}
-	return overallStat
+	return make(map[string]map[string]float64)
+	// leftStat := (*hj.left).Statistics()
+	// rightStat := (*hj.right).Statistics()
+	// overallStat := make(map[string]map[string]float64)
+	// for k, v := range leftStat {
+	// 	overallStat[k] = make(map[string]float64)
+	// 	for k2, v2 := range v {
+	// 		overallStat[k][k2] = v2
+	// 	}
+	// }
+	// for k, v := range rightStat {
+	// 	overallStat[k] = make(map[string]float64)
+	// 	for k2, v2 := range v {
+	// 		overallStat[k][k2] = v2
+	// 	}
+	// }
+	// return overallStat
 }
 
 // Join operator implementation. This function should iterate over the results

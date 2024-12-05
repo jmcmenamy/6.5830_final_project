@@ -24,7 +24,7 @@ func NewFilter(constExpr Expr, op BoolOp, field Expr, child Operator) (*Filter, 
 }
 
 func (f *Filter) Statistics() map[string]map[string]float64 {
-	return f.child.Statistics()
+	return make(map[string]map[string]float64)
 }
 
 // Return a TupleDescriptor for this filter op.
