@@ -80,7 +80,7 @@ func (f *Filter) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 
 			// return if passes filtering
 			if v1.EvalPred(v2, f.op) {
-				fmt.Printf("%v passes filtering \n", tup)
+				// fmt.Printf("%v passes filtering \n", tup)
 				return tup, nil
 			}
 

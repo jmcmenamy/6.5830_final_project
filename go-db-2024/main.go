@@ -75,6 +75,7 @@ func main() {
 		fmt.Printf("failed load catalog, %s", err.Error())
 		return
 	}
+	fmt.Println("YOOO")
 	rl, err := readline.New("> ")
 	if err != nil {
 		panic(err)
@@ -104,6 +105,8 @@ func main() {
 	aligned := true
 	for {
 		text, err := rl.Readline()
+		// fmt.Printf("READ A LINE %v\n", text)
+		start := time.Now()
 		if err != nil { // io.EOF
 			break
 		}
@@ -382,7 +385,6 @@ func main() {
 					continue
 				}
 			}
-			start := time.Now()
 
 			iter, err := plan.Iterator(tid)
 			if err != nil {

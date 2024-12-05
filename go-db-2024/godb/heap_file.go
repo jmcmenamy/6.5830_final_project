@@ -532,6 +532,10 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 		}
 		fmt.Printf("Wrote %v bytes to %v\n", n, f.metadataFileName)
 	}
+	err = f.writeToStatsFile()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
