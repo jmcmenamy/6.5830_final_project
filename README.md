@@ -31,4 +31,5 @@
 
 ## Running Godb and removing metadata files between runs
 
-- `./rundb.sh "\i ../tpch_raw_data/catalog.txt"` will remove all .dat, Stat.txt, and Info.txt files in tpch_raw_data/ between runs. This makes it easier to do many trials. Just change the command within the quotes for the first input you want to put into godb. If you get an error running the script, do `chmod +x rundb.sh`
+- `./rundb.sh "\i ../tpch_raw_data/catalog.txt"` will remove all .dat, Stat.txt, and Info.txt files in tpch_raw_data/ between runs. This makes it easier to do many trials. Just change the command within the quotes for the first input you want to put into godb. If you get an error running the script, do `chmod +x rundb.sh`.
+- `./wrapdb.sh "\i ../tpch_raw_data/catalog.txt"` will enter a loop that repeatedly takes a user input for a command to run in godb. Once it has this input, it will run the equivalent of rundb.sh, restarting godb and remoting all the .dat, Stat.txt, and Info.txt files, and then running the user provided command. This can be helpful to run fresh trials for different queries quickly. If you get an error running the script, do `chmod +x wrapdb.sh`.
