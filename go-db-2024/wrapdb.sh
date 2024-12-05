@@ -47,6 +47,7 @@ while true; do
     # Prompt for a new input string
     echo "Enter the next input string (or type 'exit' to quit). Input is $input_string: "
     # Initialize an empty variable to store multiline input
+    old_user_input="$user_input"
     user_input=""
 
     # Loop to read each line and append it to the variable
@@ -58,6 +59,11 @@ while true; do
             break
         fi
     done
+
+    if [ "$user_input" ==  "\r"$'\n' ]; then
+        echo "Reusing last query $old_user_input"
+        user_input="$old_user_input"
+    fi
     # echo "User input was $user_input" 
     if [ "$user_input" == "exit" ]; then
         break
