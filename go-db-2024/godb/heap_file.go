@@ -317,6 +317,104 @@ func getSampledOffsets(offsets []int64, sampleRate float32) []int64 {
 	return sampledOffsets
 }
 
+func (f *HeapFile) malformedHandle(line string, fields []string, desc *TupleDesc) ([]string, error) {
+	// desc := f.Descriptor()
+	numFields := len(fields)
+	// if desc == nil || desc.Fields == nil {
+	// 	return nil, GoDBError{MalformedDataError, "Descriptor was nil"}
+	// }
+	// if numFields != len(desc.Fields) {
+	// return GoDBError{MalformedDataError, fmt.Sprintf?("LoadFromCSV:  line (%s) does not have expected number of fields (expected %d, got %d)", line, len(f.Descriptor().Fields), numFields)}
+	descTypes := make([]bool, len(desc.Fields)) //true for st field, false for numerical field
+	//fieldTypes := make([]bool, numFields)
+
+	for i := range desc.Fields {
+		if desc.Fields[i].Ftype.String() == "string" {
+			descTypes[i] = true
+		} else {
+			descTypes[i] = false
+		}
+	}
+
+	remove_inds := make([]int, 0)
+	fmt.Println(numFields, len(desc.Fields))
+	if numFields > len(desc.Fields) {
+		fmt.Println("here!", numFields, len(descTypes))
+		for i := range fields {
+			fmt.Println("i", i)
+			if i >= len(descTypes) {
+				if len(remove_inds) == 0 {
+					fmt.Println("exiting?")
+					// continue
+					st_indices := make([]int, 0)
+					st_indices = append([]int{i}, st_indices...)
+					for j := i - 1; j >= 0; j-- {
+						if descTypes[j] {
+							st_indices = append([]int{j}, st_indices...)
+						} else {
+							//end when we hit non-string type
+							break
+						}
+					}
+					out_string := ""
+					//somehow mash strings together and rebuild fields :/
+					for ind := range st_indices {
+						out_string = out_string + fields[st_indices[ind]]
+					}
+
+					for ind := range st_indices {
+						fields[st_indices[ind]] = out_string
+					}
+
+					remove_inds = append(remove_inds, i)
+				}
+			} else if !descTypes[i] {
+				fmt.Println("inside", i)
+				field := strings.TrimSpace(fields[i])
+				_, err := strconv.ParseFloat(field, 64)
+
+				if err != nil {
+					//non-numeric, assume extra string
+					st_indices := make([]int, 0)
+					st_indices = append([]int{i}, st_indices...)
+					for j := i - 1; j >= 0; j-- {
+						if descTypes[j] {
+							st_indices = append([]int{j}, st_indices...)
+						} else {
+							//end when we hit non-string type
+							break
+						}
+					}
+					out_string := ""
+					//somehow mash strings together and rebuild fields :/
+					for ind := range st_indices {
+						out_string = out_string + " " + fields[st_indices[ind]]
+					}
+
+					for ind := range st_indices {
+						fields[st_indices[ind]] = out_string
+					}
+
+					remove_inds = append(remove_inds, i)
+				}
+
+			}
+		}
+		fmt.Println("remove", remove_inds)
+		if len(remove_inds) > 0 {
+			for i := len(remove_inds) - 1; i >= 0; i-- {
+				fields = append(fields[:remove_inds[i]], fields[remove_inds[i]+1:]...)
+			}
+		}
+		fmt.Println("returning", fields)
+		return fields, nil
+
+	} else {
+		return nil, GoDBError{MalformedDataError, fmt.Sprintf("LoadFromCSV: hf  line (%s) does not have expected number of fields (expected %d, got %d)", line, len(f.Descriptor().Fields), numFields)}
+	}
+
+}
+
 // Convert a line read from a CSV file to a tuple and insert into heap file
 // If fieldStats is nil, do not select for non-outlier rows during sampling.
 // Otherwise, return error if line contains an outlier numerical field based on
@@ -329,9 +427,71 @@ func (f *HeapFile) loadLine(line string, sep string, fieldStats map[string]map[s
 	if desc == nil || desc.Fields == nil {
 		return GoDBError{MalformedDataError, "Descriptor was nil"}
 	}
+
 	if numFields != len(desc.Fields) {
-		return GoDBError{MalformedDataError, fmt.Sprintf("LoadFromCSV:  line (%s) does not have expected number of fields (expected %d, got %d)", line, len(f.Descriptor().Fields), numFields)}
+		handledFields, bad := f.malformedHandle(line, fields, desc)
+
+		if bad != nil {
+			return bad
+		}
+		fields = handledFields
 	}
+	// if numFields != len(desc.Fields) {
+	// 	// return GoDBError{MalformedDataError, fmt.Sprintf?("LoadFromCSV:  line (%s) does not have expected number of fields (expected %d, got %d)", line, len(f.Descriptor().Fields), numFields)}
+	// 	descTypes := make([]bool, len(desc.Fields)) //true for st field, false for numerical field
+	// 	//fieldTypes := make([]bool, numFields)
+
+	// 	for i := range desc.Fields {
+	// 		if desc.Fields[i].Ftype.String() == "string" {
+	// 			descTypes[i] = true
+	// 		} else {
+	// 			descTypes[i] = false
+	// 		}
+	// 	}
+
+	// 	remove_inds := make([]int, 0)
+	// 	fmt.Println(numFields, len(desc.Fields))
+	// 	if numFields > len(desc.Fields) {
+	// 		fmt.Println("here!")
+	// 		for i := range fields {
+	// 			if !descTypes[i] {
+	// 				field := strings.TrimSpace(fields[i])
+	// 				_, err := strconv.ParseFloat(field, 64)
+
+	// 				if err != nil {
+	// 					//non-numeric, assume extra string
+	// 					st_indices := make([]int, 0)
+	// 					for j := i; j >= 0; j-- {
+	// 						if descTypes[j] {
+	// 							st_indices = append([]int{j}, st_indices...)
+	// 						} else {
+	// 							//end when we hit non-string type
+	// 							break
+	// 						}
+	// 					}
+	// 					out_string := ""
+	// 					//somehow mash strings together and rebuild fields :/
+	// 					for ind := range st_indices {
+	// 						out_string = out_string + fields[st_indices[ind]]
+	// 					}
+
+	// 					for ind := range st_indices {
+	// 						fields[st_indices[ind]] = out_string
+	// 					}
+
+	// 					remove_inds = append(remove_inds, i)
+	// 				}
+
+	// 			}
+	// 		}
+	// 		for i := len(remove_inds) - 1; i >= 0; i-- {
+	// 			fields = append(fields[:i], fields[i+1:]...)
+	// 		}
+
+	// 	} else {
+	// 		return GoDBError{MalformedDataError, fmt.Sprintf("LoadFromCSV: hf  line (%s) does not have expected number of fields (expected %d, got %d)", line, len(f.Descriptor().Fields), numFields)}
+	// 	}
+	// }
 
 	var newFields []DBValue
 	nStats, ok := f.statistics[N]
@@ -857,8 +1017,16 @@ func (f *HeapFile) StatFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 		if desc == nil || desc.Fields == nil {
 			return GoDBError{MalformedDataError, "Descriptor was nil"}
 		}
+		// if numFields != len(desc.Fields) {
+		// 	return GoDBError{MalformedDataError, fmt.Sprintf("LoadFromCSV: statfromcsv line %d (%s) does not have expected number of fields (expected %d, got %d)", cnt, line, len(f.Descriptor().Fields), numFields)}
+		// }
 		if numFields != len(desc.Fields) {
-			return GoDBError{MalformedDataError, fmt.Sprintf("LoadFromCSV:  line %d (%s) does not have expected number of fields (expected %d, got %d)", cnt, line, len(f.Descriptor().Fields), numFields)}
+			handledFields, bad := f.malformedHandle(line, fields, desc)
+
+			if bad != nil {
+				return bad
+			}
+			fields = handledFields
 		}
 		if cnt == 1 && hasHeader {
 			continue
@@ -1014,8 +1182,16 @@ func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 		if desc == nil || desc.Fields == nil {
 			return GoDBError{MalformedDataError, "Descriptor was nil"}
 		}
+		// if numFields != len(desc.Fields) {
+		// 	return GoDBError{MalformedDataError, fmt.Sprintf("LoadFromCSV: loadfromcsv  line %d (%s) does not have expected number of fields (expected %d, got %d)", cnt, line, len(f.Descriptor().Fields), numFields)}
+		// }
 		if numFields != len(desc.Fields) {
-			return GoDBError{MalformedDataError, fmt.Sprintf("LoadFromCSV:  line %d (%s) does not have expected number of fields (expected %d, got %d)", cnt, line, len(f.Descriptor().Fields), numFields)}
+			handledFields, bad := f.malformedHandle(line, fields, desc)
+
+			if bad != nil {
+				return bad
+			}
+			fields = handledFields
 		}
 		if cnt == 1 && hasHeader {
 			continue
