@@ -27,7 +27,14 @@ def get_trial_means(list_of_lists):
 def scatterplot(datapoints):
     sns.set(style="whitegrid", context="talk")
 
+    plt.rcParams["axes.facecolor"] = "#fffcf5ff"  # Background of the plot
+    plt.rcParams["figure.facecolor"] = "#fffcf5ff"  # Background of the figure
+
     plt.figure(figsize=(10, 6))
+    plt.xscale('log')
+    # plt.yscale('log')
+    plt.ylim(-10, 100)
+
     method_colors = {
         "reference": "black",
         "metadata": "blue",
@@ -40,7 +47,7 @@ def scatterplot(datapoints):
         x_values, y_values = datapoints[method]
         plt.scatter(x_values, y_values, label=method, s=100, color=method_colors[method], alpha=0.7, edgecolor="k")
 
-    plt.xlabel("Query Execution Time (ms)", fontsize=14)
+    plt.xlabel("log(Query Execution Time) (ms)", fontsize=14)
     plt.ylabel("Mean Absolute Percent Error", fontsize=14)
     plt.xticks(fontsize=12)
     plt.yticks(fontsize=12)
@@ -80,28 +87,84 @@ avg_query_times = {
     "stratified": [662.376417, 649.112458, 665.713958]
 }
 
-# TODO: Collect data for other aggregator function queries
-
 ### COUNT
 
+# Values are ordered alphabetically by l_returnflag (A, N, R)
+count_query_values = {
+    "reference": [[1478493, 3043852, 1478870],
+                  [1478493, 3043852, 1478870],
+                  [1478493, 3043852, 1478870]],
+    "metadata": [[574304, 1201809, 579704],
+                 [588704, 1198109, 569004],
+                 [567604, 1198609, 589604]],
+    "stats": [[1502086, 3031940, 1467187],
+              [1455978, 3057287, 1487948],
+              [1484254, 3045696, 1471262]],
+    "contiguous": [[580004, 1198009, 577804],
+                   [580004, 1198009, 577804],
+                   [580004, 1198009, 577804]],
+    "stratified": [[571504, 1202109, 582204],
+                   [583704, 1194109, 578004],
+                   [582804, 1190409, 582604]],
+}
 
-### SUM
+count_query_times = {
+    "reference": [24291.76042, 24291.576042, 24291.576042],
+    "metadata": [418.405, 377.804917, 413.180208],
+    "stats": [452.437834, 449.137166, 447.749125],
+    "contiguous": [106.078792, 105.883333, 115.250083],
+    "stratified": [665.335333, 740.38525, 670.608958]
+}
 
+### MAX
 
-### MIN
+# Values are ordered alphabetically by l_linestatus (F, O)
+max_query_values = {
+    "reference": [[104949.5, 104749.5],
+                  [104949.5, 104749.5],
+                  [104949.5, 104749.5]],
+    "metadata": [[1.640168141292686e+09, 1.640168141292686e+09],
+                 [1.6336143960174842e+09, 1.6336143960174842e+09],
+                 [1.6219032241632411e+09, 1.6219032241632411e+09]],
+    "stats": [[108156.44879360525, 108156.44879360525],
+              [108156.44879360525, 108156.44879360525],
+              [108156.44879360525, 108156.44879360525]],
+    "contiguous": [[1.6377867717158139e+09, 1.6377867717158139e+09],
+                   [1.6377867717158139e+09, 1.6377867717158139e+09],
+                   [1.6377867717158139e+09, 1.6377867717158139e+09]],
+    "stratified": [[1.6217830020267758e+09, 1.6217830020267758e+09],
+                   [1.6237236864706771e+09 , 1.6237236864706771e+09],
+                   [1.6124302766541245e+09, 1.6124302766541245e+09]],
+}
 
-
-# MAX
+max_query_times = {
+    "reference": [25166.924459, 25166.924459, 25166.924459],
+    "metadata": [381.828625, 383.179291, 383.503333],
+    "stats": [443.991333, 454.956667, 461.041083],
+    "contiguous": [97.456292, 108.441084, 106.540583],
+    "stratified": [640.698458, 654.572792, 654.681542]
+}
 
 
 if __name__ == "__main__":
-    reference_means = get_trial_means(avg_query_values["reference"])
-
     # Each method is mapped to a tuple containing two lists: query execution
     # times, mean absolute percent errors.
     datapoints = {method: ([], []) for method in METHODS}
     for method in METHODS:
+        # TODO: Simplify
+        reference_means = get_trial_means(avg_query_values["reference"])
         method_means = get_trial_means(avg_query_values[method])
         datapoints[method][0].append(sum(avg_query_times[method]) / len(avg_query_times[method]))
         datapoints[method][1].append(get_mean_absolute_percent_error(reference_means, method_means))
+
+        reference_means = get_trial_means(count_query_values["reference"])
+        method_means = get_trial_means(count_query_values[method])
+        datapoints[method][0].append(sum(count_query_times[method]) / len(count_query_times[method]))
+        datapoints[method][1].append(get_mean_absolute_percent_error(reference_means, method_means))
+
+        reference_means = get_trial_means(max_query_values["reference"])
+        method_means = get_trial_means(max_query_values[method])
+        datapoints[method][0].append(sum(max_query_times[method]) / len(max_query_times[method]))
+        datapoints[method][1].append(get_mean_absolute_percent_error(reference_means, method_means))
+
     scatterplot(datapoints)
