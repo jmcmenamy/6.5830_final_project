@@ -75,7 +75,7 @@ func main() {
 		fmt.Printf("failed load catalog, %s", err.Error())
 		return
 	}
-	fmt.Println("YOOO")
+	// fmt.Println("YOOO")
 	rl, err := readline.New("> ")
 	if err != nil {
 		panic(err)
@@ -118,6 +118,8 @@ func main() {
 		if len(text) == 0 {
 			continue
 		}
+
+		start := time.Now()
 		if text[0] == '\\' {
 			switch text[1] {
 			case 'd':
@@ -292,6 +294,9 @@ func main() {
 				bp.FlushAllPages() //gross, if in a transaction, but oh well!
 				fmt.Printf("\033[32;1mLOAD\033[0m\n\n")
 				bp.CanFlushWhenFull = false
+				// fmt.Printf("\033[32;1m(%d results)\033[0m\n", nresults)
+				duration := time.Since(start)
+				fmt.Printf("\033[32;1m%v\033[0m\n\n", duration)
 			}
 
 			query = ""
@@ -302,7 +307,6 @@ func main() {
 			continue
 		}
 		query = strings.TrimSpace(query + " " + text[0:len(text)-1])
-		start := time.Now()
 
 		explain := false
 		if strings.HasPrefix(strings.ToLower(query), "explain") {

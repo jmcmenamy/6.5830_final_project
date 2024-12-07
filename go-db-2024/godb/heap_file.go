@@ -11,7 +11,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 )
 
 var DEBUGHEAPFILE = false
@@ -64,7 +63,7 @@ type HeapFile struct {
 }
 
 func (f *HeapFile) writeToStatsFile() error {
-	fmt.Printf("Writing here %v %v\n", f.statsFile, len(f.statistics))
+	// fmt.Printf("Writing here %v %v\n", f.statsFile, len(f.statistics))
 	if f.statsFile == nil {
 		return nil
 	}
@@ -76,7 +75,7 @@ func (f *HeapFile) writeToStatsFile() error {
 			field, stats[MEAN], stats[STDDEV], stats[SUMSQUARESDIFF], stats[N])
 	}
 	_, err := f.statsFile.WriteString(statsFileContent)
-	fmt.Printf("Wrote here %v %v\n", f.statsFile, len(f.statistics))
+	// fmt.Printf("Wrote here %v %v\n", f.statsFile, len(f.statistics))
 	if err != nil {
 		return err
 	}
@@ -145,37 +144,37 @@ func NewHeapFile(fromFile string, td *TupleDesc, bp *BufferPool, extraArgs ...st
 
 	if statsFileName != "" {
 
-		fmt.Printf("got here\n")
+		// fmt.Printf("got here\n")
 		statsFile, err := os.OpenFile(statsFileName, os.O_RDWR, 0644)
 		if err != nil {
-			fmt.Printf("got err rrhere %v\n", err)
+			// fmt.Printf("got err rrhere %v\n", err)
 			if !os.IsNotExist(err) {
-				fmt.Printf("uhh bro %v\n", err)
+				// fmt.Printf("uhh bro %v\n", err)
 				return nil, err
 			}
-			fmt.Printf("got err here %v\n", err)
+			// fmt.Printf("got err here %v\n", err)
 			statsFile, err = os.OpenFile(statsFileName, os.O_RDWR|os.O_CREATE, 0644)
 			if err != nil {
-				fmt.Printf("uhh bro %v %v\n", err, statsFile)
+				// fmt.Printf("uhh bro %v %v\n", err, statsFile)
 				return nil, err
 			}
 			heapFile.statsFile = statsFile
-			fmt.Printf("setting here %v\n", heapFile.statsFile)
+			// fmt.Printf("setting here %v\n", heapFile.statsFile)
 			err = heapFile.writeToStatsFile()
 			if err != nil {
-				fmt.Printf("got err here %v\n", err)
+				// fmt.Printf("got err here %v\n", err)
 				return nil, err
 			}
 		} else {
-			fmt.Printf("nil err/????? %v %v\n", statsFile, err)
+			// fmt.Printf("nil err/????? %v %v\n", statsFile, err)
 		}
 		heapFile.statsFile = statsFile
 		err = heapFile.ProcessStatsFile(statsFile)
 		if err != nil {
-			fmt.Printf("uhh brooo %v %v\n", err, statsFile)
+			// fmt.Printf("uhh brooo %v %v\n", err, statsFile)
 			return nil, err
 		}
-		fmt.Printf("look here %v\n", statsFile)
+		// fmt.Printf("look here %v\n", statsFile)
 		tblFile, err := os.OpenFile(strings.Replace(fromFile, ".dat", ".tbl", 1), os.O_RDWR, 0644)
 		if err != nil {
 			return nil, err
@@ -190,11 +189,11 @@ func NewHeapFile(fromFile string, td *TupleDesc, bp *BufferPool, extraArgs ...st
 			heapFile.statistics[ESTIMATEDLINES] = make(map[string]float64)
 			estLinesStats = heapFile.statistics[ESTIMATEDLINES]
 		}
-		fmt.Printf("Writing estimates lines as %v for %v file size is %v tuple size is %v\n", estimatedLinesInFile, statsFileName, fileInfo.Name(), heapFile.tupleSize)
+		// fmt.Printf("Writing estimates lines as %v for %v file size is %v tuple size is %v\n", estimatedLinesInFile, statsFileName, fileInfo.Name(), heapFile.tupleSize)
 		estLinesStats[MEAN] = float64(estimatedLinesInFile)
 	}
 
-	fmt.Printf("here stats file is %v %v\n", heapFile.statsFile, statsFileName)
+	// fmt.Printf("here stats file is %v %v\n", heapFile.statsFile, statsFileName)
 	return heapFile, nil //replace me
 }
 
@@ -203,7 +202,7 @@ func (f *HeapFile) Statistics() map[string]map[string]float64 {
 }
 
 func (f *HeapFile) ProcessStatsFile(file *os.File) error {
-	fmt.Printf("entering %v\n", file)
+	// fmt.Printf("entering %v\n", file)
 	scanner := bufio.NewScanner(file)
 	scanner.Scan()
 	firstLine := scanner.Text()
@@ -229,7 +228,7 @@ func (f *HeapFile) ProcessStatsFile(file *os.File) error {
 			fieldStats[statNames[i]] = floatVal
 		}
 	}
-	fmt.Printf("stats are now %v %v\n", f.statistics, file)
+	// fmt.Printf("stats are now %v %v\n", f.statistics, file)
 	return nil
 }
 
@@ -237,7 +236,7 @@ func (f *HeapFile) ProcessMetadataFile(file *os.File) error {
 	// Define a buffer size for reading chunks (e.g., 4096 bytes = 4 KB)
 	chunkSize := 4096
 	buffer := make([]byte, chunkSize)
-	start := time.Now()
+	// start := time.Now()
 
 	// Read the file in chunks
 	for {
@@ -274,8 +273,8 @@ func (f *HeapFile) ProcessMetadataFile(file *os.File) error {
 			break
 		}
 	}
-	duration := time.Since(start)
-	fmt.Printf("Parsed metadatafile in %v seconds, len(f.offsetsLoaded) = %v\n", duration, len(f.offSetsLoaded))
+	// duration := time.Since(start)
+	// fmt.Printf("Parsed metadatafile in %v seconds, len(f.offsetsLoaded) = %v\n", duration, len(f.offSetsLoaded))
 	return nil
 }
 
@@ -445,7 +444,7 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 	if estimatedLinesInFile >= samplingThreshold {
 		reader := bufio.NewReader(file)
 		numSampledLines := 0
-		fmt.Printf("Entering for loops len(f.offsetsLoaded) = %v and estiamtedLinesinFIle is %v\n", len(f.offSetsLoaded), estimatedLinesInFile)
+		// fmt.Printf("Entering for loops len(f.offsetsLoaded) = %v and estiamtedLinesinFIle is %v\n", len(f.offSetsLoaded), estimatedLinesInFile)
 		for numSampledLines < int(sampleRate*float64(estimatedLinesInFile)) && len(f.offSetsLoaded) <= estimatedLinesInFile-100 {
 			randomOffset := rand.Int63n(fileInfo.Size() - 1)
 			file.Seek(randomOffset, io.SeekStart)
@@ -487,7 +486,7 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 		// Get the current file offset (position)
 		offset, err := file.Seek(0, io.SeekCurrent)
 		if err != nil {
-			fmt.Println("Error getting file offset:", err)
+			// fmt.Println("Error getting file offset:", err)
 			return err
 		}
 		for scanner.Scan() {
@@ -496,7 +495,7 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 				// Get the current file offset (position)
 				offset, err = file.Seek(0, io.SeekCurrent)
 				if err != nil {
-					fmt.Println("Error getting file offset:", err)
+					// fmt.Println("Error getting file offset:", err)
 					return err
 				}
 				continue
@@ -509,7 +508,7 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 			// Get the current file offset (position)
 			offset, err = file.Seek(0, io.SeekCurrent)
 			if err != nil {
-				fmt.Println("Error getting file offset:", err)
+				// fmt.Println("Error getting file offset:", err)
 				return err
 			}
 		}
@@ -526,11 +525,11 @@ func (f *HeapFile) LoadSomeFromCSV(file *os.File, hasHeader bool, sep string, sk
 		newString += fmt.Sprintf("%v,", offset)
 	}
 	if newString != "" && newString != "," {
-		n, err := f.metadataFile.WriteString(newString)
+		_, err := f.metadataFile.WriteString(newString)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Wrote %v bytes to %v\n", n, f.metadataFileName)
+		// fmt.Printf("Wrote %v bytes to %v\n", n, f.metadataFileName)
 	}
 	err = f.writeToStatsFile()
 	if err != nil {
@@ -565,10 +564,10 @@ func (f *HeapFile) LoadSomeFromCSVContiguous(file *os.File, hasHeader bool, sep 
 	estimatedLinesInFile := int(fileInfo.Size()) / f.tupleSize
 	contiguousOffset := f.statistics[OFFSET][MEAN]
 	file.Seek(int64(contiguousOffset), io.SeekStart)
-	fmt.Printf("gonna start reading from %v. file size is %v tuples size is %v\n", contiguousOffset, fileInfo.Name(), f.tupleSize)
+	// fmt.Printf("gonna start reading from %v. file size is %v tuples size is %v\n", contiguousOffset, fileInfo.Name(), f.tupleSize)
 	scanner := bufio.NewScanner(file)
 	if estimatedLinesInFile >= samplingThreshold {
-		fmt.Printf("estimated is %v (%v/%v) sampling is %v\n", estimatedLinesInFile, fileInfo.Size(), f.tupleSize, samplingThreshold)
+		// fmt.Printf("estimated is %v (%v/%v) sampling is %v\n", estimatedLinesInFile, fileInfo.Size(), f.tupleSize, samplingThreshold)
 		numSampledLines := 0
 		newOffset, err := file.Seek(0, io.SeekCurrent)
 		if err != nil {
@@ -599,7 +598,7 @@ func (f *HeapFile) LoadSomeFromCSVContiguous(file *os.File, hasHeader bool, sep 
 		}
 
 		contiguousOffset = float64(newOffset)
-		fmt.Printf("loaded %v new lines \n", numSampledLines)
+		// fmt.Printf("loaded %v new lines \n", numSampledLines)
 		if numSampledLines == 0 {
 			f.loadedEntireFile = true
 		}
@@ -609,7 +608,7 @@ func (f *HeapFile) LoadSomeFromCSVContiguous(file *os.File, hasHeader bool, sep 
 		scanner := bufio.NewScanner(file)
 		offset, err := file.Seek(0, io.SeekCurrent)
 		if err != nil {
-			fmt.Println("Error getting file offset:", err)
+			// fmt.Println("Error getting file offset:", err)
 			return err
 		}
 		for scanner.Scan() {
@@ -617,7 +616,7 @@ func (f *HeapFile) LoadSomeFromCSVContiguous(file *os.File, hasHeader bool, sep 
 			if f.offSetsLoaded[offset] {
 				offset, err = file.Seek(0, io.SeekCurrent)
 				if err != nil {
-					fmt.Println("Error getting file offset:", err)
+					// fmt.Println("Error getting file offset:", err)
 					return err
 				}
 				continue
@@ -630,11 +629,11 @@ func (f *HeapFile) LoadSomeFromCSVContiguous(file *os.File, hasHeader bool, sep 
 			// Get the current file offset (position)
 			offset, err = file.Seek(0, io.SeekCurrent)
 			if err != nil {
-				fmt.Println("Error getting file offset:", err)
+				// fmt.Println("Error getting file offset:", err)
 				return err
 			}
 		}
-		fmt.Printf("read entire file?\n")
+		// fmt.Printf("read entire file?\n")
 		f.loadedEntireFile = true
 		contiguousOffset = float64(offset)
 	}
@@ -649,7 +648,7 @@ func (f *HeapFile) LoadSomeFromCSVContiguous(file *os.File, hasHeader bool, sep 
 		offsetStats = f.statistics[OFFSET]
 	}
 	offsetStats[MEAN] = contiguousOffset
-	fmt.Printf("offset is now %v\n", contiguousOffset)
+	// fmt.Printf("offset is now %v\n", contiguousOffset)
 
 	newString := ""
 	for offset, _ := range newOffsetsLoaded {
@@ -657,11 +656,11 @@ func (f *HeapFile) LoadSomeFromCSVContiguous(file *os.File, hasHeader bool, sep 
 		newString += fmt.Sprintf("%v,", offset)
 	}
 	if newString != "" && newString != "," {
-		n, err := f.metadataFile.WriteString(newString)
+		_, err := f.metadataFile.WriteString(newString)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Wrote %v bytes to %v\n", n, f.metadataFileName)
+		// fmt.Printf("Wrote %v bytes to %v\n", n, f.metadataFileName)
 	}
 
 	err = f.writeToStatsFile()
@@ -701,7 +700,7 @@ func (f *HeapFile) LoadSomeFromCSVContiguousStratified(file *os.File, hasHeader 
 	scanner := bufio.NewScanner(file)
 	scanner.Scan()
 	if estimatedLinesInFile >= samplingThreshold {
-		fmt.Printf("HEYO! estimated is %v (%v/%v) sampling is %v\n", estimatedLinesInFile, fileInfo.Size(), f.tupleSize, samplingThreshold)
+		// fmt.Printf("HEYO! estimated is %v (%v/%v) sampling is %v\n", estimatedLinesInFile, fileInfo.Size(), f.tupleSize, samplingThreshold)
 		numSampledLines := 0
 		newOffset, err := file.Seek(0, io.SeekCurrent)
 		if err != nil {
@@ -713,7 +712,7 @@ func (f *HeapFile) LoadSomeFromCSVContiguousStratified(file *os.File, hasHeader 
 			shouldContinue = scanner.Scan()
 			if !shouldContinue {
 				if retries == 0 {
-					fmt.Printf("breaking here?")
+					// fmt.Printf("breaking here?")
 					break
 				}
 				retries--
@@ -747,7 +746,7 @@ func (f *HeapFile) LoadSomeFromCSVContiguousStratified(file *os.File, hasHeader 
 			}
 		}
 
-		fmt.Printf("loaded %v new lines \n", numSampledLines)
+		// fmt.Printf("loaded %v new lines \n", numSampledLines)
 		if numSampledLines == 0 {
 			f.loadedEntireFile = true
 		}
@@ -757,7 +756,7 @@ func (f *HeapFile) LoadSomeFromCSVContiguousStratified(file *os.File, hasHeader 
 		scanner := bufio.NewScanner(file)
 		offset, err := file.Seek(0, io.SeekCurrent)
 		if err != nil {
-			fmt.Println("Error getting file offset:", err)
+			// fmt.Println("Error getting file offset:", err)
 			return err
 		}
 		for scanner.Scan() {
@@ -765,7 +764,7 @@ func (f *HeapFile) LoadSomeFromCSVContiguousStratified(file *os.File, hasHeader 
 			if f.offSetsLoaded[offset] {
 				offset, err = file.Seek(0, io.SeekCurrent)
 				if err != nil {
-					fmt.Println("Error getting file offset:", err)
+					// fmt.Println("Error getting file offset:", err)
 					return err
 				}
 				continue
@@ -778,11 +777,11 @@ func (f *HeapFile) LoadSomeFromCSVContiguousStratified(file *os.File, hasHeader 
 			// Get the current file offset (position)
 			offset, err = file.Seek(0, io.SeekCurrent)
 			if err != nil {
-				fmt.Println("Error getting file offset:", err)
+				// fmt.Println("Error getting file offset:", err)
 				return err
 			}
 		}
-		fmt.Printf("read entire file?\n")
+		// fmt.Printf("read entire file?\n")
 		f.loadedEntireFile = true
 	}
 	bp := f.bufPool
@@ -796,11 +795,11 @@ func (f *HeapFile) LoadSomeFromCSVContiguousStratified(file *os.File, hasHeader 
 		newString += fmt.Sprintf("%v,", offset)
 	}
 	if newString != "" && newString != "," {
-		n, err := f.metadataFile.WriteString(newString)
+		_, err := f.metadataFile.WriteString(newString)
 		if err != nil {
 			return err
 		}
-		fmt.Printf(" HEYO ! Wrote %v bytes to %v\n", n, f.metadataFileName)
+		// fmt.Printf(" HEYO ! Wrote %v bytes to %v\n", n, f.metadataFileName)
 	}
 
 	err = f.writeToStatsFile()
@@ -901,7 +900,7 @@ func (f *HeapFile) StatFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 	// mark as complete so it's not updated
 	fieldStats[COMPLETE] = map[string]float64{MEAN: 1}
 	fieldStats[ESTIMATEDLINES] = map[string]float64{MEAN: float64(cnt - 1)}
-	fmt.Printf("Done scanning count is %v for %v\n", cnt-1, statFilename)
+	// fmt.Printf("Done scanning count is %v for %v\n", cnt-1, statFilename)
 
 	for field, stats := range fieldStats {
 		line := fmt.Sprintf("%s,%.2f,%.2f\n",
@@ -1001,7 +1000,7 @@ func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 
 	for scanner.Scan() {
 		if i%100 == 0 {
-			fmt.Printf("Reading row %v of %v\n", i, file.Name())
+			// fmt.Printf("Reading row %v of %v\n", i, file.Name())
 		}
 		line := scanner.Text()
 		fields := strings.Split(line, sep)
